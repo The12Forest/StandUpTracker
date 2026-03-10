@@ -1,0 +1,105 @@
+@import "tailwindcss";
+
+/* ── Bento-Zen Design Tokens ── */
+@theme {
+  --color-zen-950: #0a0a0f;
+  --color-zen-900: #111118;
+  --color-zen-800: #1a1a24;
+  --color-zen-700: #25253a;
+  --color-zen-600: #3a3a55;
+  --color-zen-500: #6b6b8a;
+  --color-zen-400: #9898b4;
+  --color-zen-300: #c4c4d8;
+  --color-zen-200: #e2e2ec;
+  --color-zen-100: #f3f3f8;
+
+  --color-accent-500: #10b981;
+  --color-accent-400: #34d399;
+  --color-accent-600: #059669;
+  --color-accent-glow: rgba(16, 185, 129, 0.15);
+
+  --color-danger-500: #ef4444;
+  --color-danger-400: #f87171;
+  --color-warn-500: #f59e0b;
+  --color-warn-400: #fbbf24;
+  --color-info-500: #3b82f6;
+
+  --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+}
+
+/* ── Base ── */
+body {
+  @apply bg-zen-950 text-zen-200 antialiased;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  margin: 0;
+  min-height: 100vh;
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Bento Card ── */
+.bento-card {
+  @apply bg-zen-900/80 backdrop-blur-xl border border-zen-700/40 rounded-2xl p-6;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+.bento-card:hover {
+  @apply border-accent-500/30;
+  box-shadow: 0 0 30px var(--color-accent-glow);
+}
+
+/* ── Accent Pulse ── */
+@keyframes bento-pulse {
+  0%, 100% { box-shadow: 0 0 20px var(--color-accent-glow); }
+  50% { box-shadow: 0 0 50px rgba(16, 185, 129, 0.25); }
+}
+.bento-pulse { animation: bento-pulse 3s ease-in-out infinite; }
+
+/* ── Glass Input ── */
+.glass-input {
+  @apply bg-zen-800/60 border border-zen-700/50 rounded-xl px-4 py-3 text-zen-100
+         placeholder:text-zen-500 focus:outline-none focus:border-accent-500/50
+         focus:ring-1 focus:ring-accent-500/20 transition-all duration-200;
+}
+
+/* ── Buttons ── */
+.btn-accent {
+  @apply bg-accent-500 hover:bg-accent-400 text-zen-950 font-semibold
+         px-6 py-3 rounded-xl transition-all duration-200
+         active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed;
+}
+.btn-ghost {
+  @apply text-zen-400 hover:text-zen-100 hover:bg-zen-800/50
+         px-4 py-2 rounded-xl transition-all duration-200;
+}
+.btn-danger {
+  @apply bg-danger-500 hover:bg-danger-400 text-white font-semibold
+         px-6 py-3 rounded-xl transition-all duration-200 active:scale-[0.97];
+}
+
+/* ── Timer Display ── */
+.timer-display {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.05em;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { @apply bg-zen-700 rounded-full; }
+::-webkit-scrollbar-thumb:hover { @apply bg-zen-600; }
+
+/* ── Toast animations ── */
+@keyframes toast-in {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+@keyframes toast-out {
+  from { opacity: 1; }
+  to { opacity: 0; transform: translateX(50%); }
+}
+

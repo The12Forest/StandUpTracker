@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Login — StandUpTracker</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#0a0e17">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="auth-container">
+    <div class="glass auth-card">
+      <div class="auth-logo">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        <h1 class="text-gradient">Welcome Back</h1>
+        <p class="text-muted text-sm">Sign in to your StandUpTracker account</p>
+      </div>
+
+      <div id="verifiedMsg" class="hidden" style="background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.3);border-radius:var(--radius-md);padding:12px;margin-bottom:16px;color:var(--success);font-size:0.9rem;text-align:center">
+        Email verified successfully! You can now log in.
+      </div>
+
+      <form id="loginForm" class="flex flex-col gap-md">
+        <div class="form-group">
+          <label class="form-label">Username or Email</label>
+          <input type="text" id="login" class="form-input" placeholder="Enter username or email" required autocomplete="username">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Password</label>
+          <input type="password" id="password" class="form-input" placeholder="Enter password" required autocomplete="current-password">
+        </div>
+
+        <!-- 2FA Fields (shown when needed) -->
+        <div id="totpField" class="form-group hidden">
+          <label class="form-label">Authenticator Code</label>
+          <input type="text" id="totpCode" class="form-input text-mono" placeholder="000000" maxlength="8" autocomplete="one-time-code" inputmode="numeric">
+          <span class="text-xs text-muted">Enter your 6-digit TOTP code or a recovery code</span>
+        </div>
+
+        <div id="emailCodeField" class="form-group hidden">
+          <label class="form-label">Email Verification Code</label>
+          <input type="text" id="email2faCode" class="form-input text-mono" placeholder="000000" maxlength="6" autocomplete="one-time-code" inputmode="numeric">
+          <span class="text-xs text-muted">Check your email for the 6-digit code</span>
+        </div>
+
+        <div id="errorMsg" class="hidden" style="color:var(--danger);font-size:0.85rem;text-align:center"></div>
+
+        <button type="submit" class="btn btn-primary w-full" id="submitBtn">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+          Sign In
+        </button>
+      </form>
+
+      <p class="text-center text-sm mt-md text-muted">
+        Don't have an account? <a href="/register">Create one</a>
+      </p>
+      <p class="text-center mt-sm"><a href="/" class="text-sm text-muted">← Back to home</a></p>
+    </div>
+  </div>
+
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script src="/js/theme.js"></script>
+  <script>
+    // Check for verified query param
+    if (new URLSearchParams(window.location.search).get('verified') === 'true') {
+      document.getElementById('verifiedMsg').classList.remove('hidden');
+    }
+
+    // If already logged in, redirect
+    if (localStorage.getItem('sut_token')) {
+      window.location.href = '/app';
+    }
+
+    let pending2fa = null;
+
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const errorEl = document.getElementById('errorMsg');
+      errorEl.classList.add('hidden');
+      const btn = document.getElementById('submitBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<div class="spinner"></div> Signing in...';
+
+      try {
+        const body = {
+          login: document.getElementById('login').value,
+          password: document.getElementById('password').value,
+        };
+
+        // Include 2FA codes if visible
+        const totpCode = document.getElementById('totpCode').value;
+        const emailCode = document.getElementById('email2faCode').value;
+        if (totpCode) body.totpCode = totpCode;
+        if (emailCode) body.email2faCode = emailCode;
+
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+
+        const data = await res.json();
+
+        if (data.requires2fa === 'totp') {
+          document.getElementById('totpField').classList.remove('hidden');
+          document.getElementById('totpCode').focus();
+          pending2fa = 'totp';
+          btn.disabled = false;
+          btn.innerHTML = 'Verify & Sign In';
+          return;
+        }
+
+        if (data.requires2fa === 'email') {
+          document.getElementById('emailCodeField').classList.remove('hidden');
+          document.getElementById('email2faCode').focus();
+          pending2fa = 'email';
+          btn.disabled = false;
+          btn.innerHTML = 'Verify & Sign In';
+          return;
+        }
+
+        if (!res.ok) {
+          throw new Error(data.error || 'Login failed');
+        }
+
+        localStorage.setItem('sut_token', data.token);
+        localStorage.setItem('sut_user', JSON.stringify(data.user));
+        window.location.href = '/app';
+      } catch (err) {
+        errorEl.textContent = err.message;
+        errorEl.classList.remove('hidden');
+        btn.disabled = false;
+        btn.innerHTML = pending2fa ? 'Verify & Sign In' : 'Sign In';
+      }
+    });
+  </script>
+</body>
+</html>

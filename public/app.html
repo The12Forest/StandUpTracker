@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>StandUpTracker — App</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/icon512_rounded.png">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#0a0e17">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <!-- Navbar -->
+  <nav class="navbar">
+    <div class="navbar-inner">
+      <a href="/app" class="navbar-brand">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        <span class="text-gradient">StandUpTracker</span>
+      </a>
+      <div class="navbar-nav" id="navMenu">
+        <button class="nav-link active" data-page="tracker" onclick="showPage('tracker',this)">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          Tracker
+        </button>
+        <button class="nav-link" data-page="stats" onclick="showPage('stats',this)">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 21v-6M12 21V3M16 21v-4M20 21v-2M4 21v-8"/></svg>
+          Stats
+        </button>
+        <button class="nav-link" data-page="achievements" onclick="showPage('achievements',this)">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          Achievements
+        </button>
+        <button class="nav-link" data-page="settings" onclick="showPage('settings',this)">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          Settings
+        </button>
+        <a href="/leaderboard" class="nav-link">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 21v-6M12 21V3M16 21v-4"/></svg>
+          Board
+        </a>
+        <button class="nav-link" id="adminLink" style="display:none" onclick="window.location.href='/admin'">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+          Admin
+        </button>
+        <button class="nav-link" onclick="logout()" style="color:var(--danger)">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          Logout
+        </button>
+      </div>
+      <button class="navbar-menu-btn" onclick="document.getElementById('navMenu').classList.toggle('open')">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+    </div>
+  </nav>
+
+  <!-- Email Verification Banner -->
+  <div id="verifyBanner" class="hidden" style="background:rgba(245,158,11,0.1);border-bottom:1px solid rgba(245,158,11,0.3);padding:12px 16px;text-align:center;font-size:0.9rem;color:var(--warning)">
+    Please verify your email address. <button class="btn btn-sm btn-ghost" onclick="resendVerification()">Resend email</button>
+  </div>
+
+  <div class="container page-content">
+    <!-- TRACKER PAGE -->
+    <div id="tracker" class="page active">
+      <div class="glass card text-center mb-lg">
+        <h2 class="mb-md">Standing Timer</h2>
+        <div id="timer" class="timer-display">00:00:00</div>
+        <div id="globalCounterStatus" class="text-sm text-muted mb-md" style="display:none"></div>
+        <div class="flex justify-center gap-md" style="flex-wrap:wrap">
+          <button id="startStopBtn" class="btn btn-primary btn-lg" onclick="toggleTracking()">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="playIcon"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            <span id="startStopText">Start Standing</span>
+          </button>
+          <button class="btn btn-danger" onclick="resetToday()">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+            Reset Today
+          </button>
+        </div>
+      </div>
+      <div class="grid grid-auto">
+        <div class="glass-sm kpi-card"><div class="kpi-value text-mono" id="kpiToday">00:00</div><div class="kpi-label">Today</div></div>
+        <div class="glass-sm kpi-card"><div class="kpi-value text-mono" id="kpiGoalPct">0%</div><div class="kpi-label">Goal</div></div>
+        <div class="glass-sm kpi-card"><div class="kpi-value" id="kpiStreak">0</div><div class="kpi-label">Streak</div></div>
+        <div class="glass-sm kpi-card"><div class="kpi-value" id="kpiLevel">Lv.1</div><div class="kpi-label">Level</div></div>
+      </div>
+    </div>
+
+    <!-- STATS PAGE -->
+    <div id="stats" class="page">
+      <div class="glass card mb-lg">
+        <h2 class="mb-md">Statistics</h2>
+        <h3 class="mb-md" style="font-size:0.95rem;color:var(--fg-secondary)">Activity Heatmap</h3>
+        <div class="heatmap-container glass-sm">
+          <div id="heatmapMonths" class="heatmap-months"></div>
+          <div class="heatmap-grid">
+            <div class="heatmap-days">
+              <div class="heatmap-day"></div><div class="heatmap-day">Mo</div><div class="heatmap-day"></div><div class="heatmap-day">We</div><div class="heatmap-day"></div><div class="heatmap-day">Fr</div><div class="heatmap-day"></div>
+            </div>
+            <div id="heatmap" class="heatmap"></div>
+          </div>
+          <div class="heatmap-legend">
+            <span>Less</span>
+            <div class="legend-cell" style="background:#161b22"></div>
+            <div class="legend-cell" style="background:#0e4429"></div>
+            <div class="legend-cell" style="background:#006d32"></div>
+            <div class="legend-cell" style="background:#26a641"></div>
+            <div class="legend-cell" style="background:#39d353"></div>
+            <span>More</span>
+          </div>
+        </div>
+      </div>
+      <div class="grid grid-auto mb-lg">
+        <div class="glass-sm kpi-card"><div class="kpi-value text-mono" id="kpiStatToday">0h</div><div class="kpi-label">Today</div></div>
+        <div class="glass-sm kpi-card"><div class="kpi-value text-mono" id="kpiAvg">0h</div><div class="kpi-label">Daily Avg</div></div>
+        <div class="glass-sm kpi-card"><div class="kpi-value text-mono" id="kpiSum">0h</div><div class="kpi-label">Total (30d)</div></div>
+        <div class="glass-sm kpi-card"><div class="kpi-value" id="kpiStatStreak">0</div><div class="kpi-label">Streak</div></div>
+        <div class="glass-sm kpi-card"><div class="kpi-value" id="kpiBest">0</div><div class="kpi-label">Best Streak</div></div>
+      </div>
+      <div class="glass card mb-lg">
+        <h3 style="font-size:0.95rem;color:var(--fg-secondary)">Last 30 Days</h3>
+        <div class="chart-box"><canvas id="barChart"></canvas></div>
+      </div>
+      <div class="glass card">
+        <h3 style="font-size:0.95rem;color:var(--fg-secondary)">Day-by-Day</h3>
+        <div class="table-wrapper mt-sm">
+          <table>
+            <thead><tr><th>Date</th><th>Standing Time</th><th>Goal</th></tr></thead>
+            <tbody id="statsTable"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ACHIEVEMENTS PAGE -->
+    <div id="achievements" class="page">
+      <div class="glass card mb-lg">
+        <h2 class="mb-md">Achievements & Level</h2>
+        <div id="levelPanel"></div>
+      </div>
+      <div class="glass card mb-lg">
+        <h3 class="mb-md">Challenges</h3>
+        <div id="challengesPanel"></div>
+      </div>
+      <div class="glass card">
+        <h3 class="mb-md">All Achievements</h3>
+        <div id="achievementsPanel"></div>
+      </div>
+    </div>
+
+    <!-- SETTINGS PAGE -->
+    <div id="settings" class="page">
+      <div class="glass card mb-lg">
+        <h2 class="mb-lg">Account Information</h2>
+        <div class="grid grid-2 gap-md">
+          <div class="form-group"><span class="form-label">User ID</span><div class="text-mono text-sm" id="infoUserId">—</div></div>
+          <div class="form-group"><span class="form-label">Role</span><div id="infoRole">—</div></div>
+          <div class="form-group"><span class="form-label">Username</span><div id="infoUsername">—</div></div>
+          <div class="form-group"><span class="form-label">Email</span><div id="infoEmail">—</div></div>
+          <div class="form-group"><span class="form-label">Member Since</span><div id="infoCreated">—</div></div>
+          <div class="form-group"><span class="form-label">Email Verified</span><div id="infoVerified">—</div></div>
+        </div>
+      </div>
+
+      <div class="glass card mb-lg">
+        <h3 class="mb-md">Preferences</h3>
+        <div class="flex flex-col gap-md">
+          <div class="flex items-center justify-between">
+            <div><div class="form-label">Theme</div><span class="text-xs text-muted">Choose your visual style</span></div>
+            <select id="themeSelect" class="form-select" style="width:auto" onchange="changeTheme(this.value)">
+              <option value="dark">Dark</option>
+              <option value="light">Light</option>
+              <option value="system">System</option>
+            </select>
+          </div>
+          <div class="flex items-center justify-between gap-md">
+            <div><div class="form-label">Daily Goal (minutes)</div></div>
+            <div class="flex items-center gap-sm">
+              <input type="number" id="goalInput" class="form-input" style="width:80px" min="1" max="480">
+              <button class="btn btn-primary btn-sm" onclick="saveGoal()">Save</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="glass card mb-lg">
+        <h3 class="mb-md">Change Email</h3>
+        <form id="emailForm" class="flex flex-col gap-md">
+          <div class="form-group"><label class="form-label">New Email</label><input type="email" id="newEmail" class="form-input" required></div>
+          <div class="form-group"><label class="form-label">Current Password</label><input type="password" id="emailPassword" class="form-input" required></div>
+          <button type="submit" class="btn btn-primary btn-sm" style="align-self:flex-start">Update Email</button>
+        </form>
+      </div>
+
+      <div class="glass card mb-lg">
+        <h3 class="mb-md">Change Password</h3>
+        <form id="passwordForm" class="flex flex-col gap-md">
+          <div class="form-group"><label class="form-label">Current Password</label><input type="password" id="currentPassword" class="form-input" required></div>
+          <div class="form-group"><label class="form-label">New Password</label><input type="password" id="newPassword" class="form-input" required minlength="8"></div>
+          <button type="submit" class="btn btn-primary btn-sm" style="align-self:flex-start">Update Password</button>
+        </form>
+      </div>
+
+      <div class="glass card mb-lg">
+        <h3 class="mb-md">Two-Factor Authentication</h3>
+        <div class="flex flex-col gap-lg">
+          <!-- TOTP 2FA -->
+          <div class="flex items-center justify-between">
+            <div>
+              <div class="form-label">Authenticator App (TOTP)</div>
+              <span class="text-xs text-muted">Use Google Authenticator, Authy, etc.</span>
+            </div>
+            <div id="totpStatus"></div>
+          </div>
+          <div id="totpSetupArea" class="hidden"></div>
+          <!-- Email 2FA -->
+          <div class="flex items-center justify-between">
+            <div>
+              <div class="form-label">Email 2FA</div>
+              <span class="text-xs text-muted">Receive a code via email on login</span>
+            </div>
+            <div id="email2faStatus"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="glass card mb-lg">
+        <h3 class="mb-md">Reminders</h3>
+        <div id="reminderSettings"></div>
+      </div>
+
+      <div class="glass card mb-lg">
+        <h3 class="mb-md">Data</h3>
+        <div class="flex gap-md" style="flex-wrap:wrap">
+          <button class="btn btn-ghost" onclick="syncFromLocal()">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>
+            Sync Local Data to Server
+          </button>
+          <button class="btn btn-ghost" onclick="exportCSV()">CSV Export</button>
+          <button class="btn btn-danger" onclick="clearAllData()">Delete All Data</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script src="/js/diagram.js"></script>
+  <script src="/js/features.js"></script>
+  <script src="/js/theme.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>

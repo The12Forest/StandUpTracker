@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Admin — StandUpTracker</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <meta name="theme-color" content="#0a0e17">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <nav class="navbar">
+    <div class="navbar-inner">
+      <a href="/app" class="navbar-brand">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        <span class="text-gradient">Admin Panel</span>
+      </a>
+      <div class="navbar-nav" id="navMenu">
+        <button class="nav-link active" onclick="showAdminPage('dashboard',this)">Dashboard</button>
+        <button class="nav-link" onclick="showAdminPage('users',this)">Users</button>
+        <button class="nav-link" onclick="showAdminPage('logs',this)">Logs</button>
+        <button class="nav-link" onclick="showAdminPage('adminSettings',this)">Settings</button>
+        <a href="/app" class="nav-link">← Back to App</a>
+      </div>
+      <button class="navbar-menu-btn" onclick="document.getElementById('navMenu').classList.toggle('open')">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+    </div>
+  </nav>
+
+  <div class="container-wide page-content">
+    <!-- Dashboard -->
+    <div id="dashboard" class="page active">
+      <h2 class="mb-lg"><span class="text-gradient">Server Dashboard</span></h2>
+      <div class="grid grid-4 mb-lg" id="serverKpis">
+        <div class="glass-sm kpi-card"><div class="kpi-value" id="kpiUsers">—</div><div class="kpi-label">Total Users</div></div>
+        <div class="glass-sm kpi-card"><div class="kpi-value" id="kpiActive">—</div><div class="kpi-label">Active Users</div></div>
+        <div class="glass-sm kpi-card"><div class="kpi-value" id="kpiConnections">—</div><div class="kpi-label">WS Connections</div></div>
+        <div class="glass-sm kpi-card"><div class="kpi-value" id="kpiUptime">—</div><div class="kpi-label">Server Uptime</div></div>
+      </div>
+      <div class="grid grid-2 mb-lg">
+        <div class="glass card">
+          <h3 class="mb-md" style="font-size:0.95rem;color:var(--fg-secondary)">Server Health</h3>
+          <div class="flex flex-col gap-sm" id="serverHealth">
+            <div class="flex justify-between"><span class="text-muted text-sm">Memory (RSS)</span><span class="text-mono text-sm" id="memRss">—</span></div>
+            <div class="flex justify-between"><span class="text-muted text-sm">Heap Used</span><span class="text-mono text-sm" id="memHeap">—</span></div>
+            <div class="flex justify-between"><span class="text-muted text-sm">CPU Load (1m)</span><span class="text-mono text-sm" id="cpuLoad">—</span></div>
+            <div class="flex justify-between"><span class="text-muted text-sm">Platform</span><span class="text-mono text-sm" id="platform">—</span></div>
+            <div class="flex justify-between"><span class="text-muted text-sm">Node.js</span><span class="text-mono text-sm" id="nodeVer">—</span></div>
+          </div>
+        </div>
+        <div class="glass card">
+          <h3 class="mb-md" style="font-size:0.95rem;color:var(--fg-secondary)">Tracking Stats</h3>
+          <div class="flex flex-col gap-sm" id="trackingStats">
+            <div class="flex justify-between"><span class="text-muted text-sm">Total Records</span><span class="text-mono text-sm" id="totalRecords">—</span></div>
+            <div class="flex justify-between"><span class="text-muted text-sm">Total Hours Tracked</span><span class="text-mono text-sm" id="totalHours">—</span></div>
+            <div class="flex justify-between"><span class="text-muted text-sm">Verified Users</span><span class="text-mono text-sm" id="verifiedUsers">—</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="glass card">
+        <h3 class="mb-md" style="font-size:0.95rem;color:var(--fg-secondary)">Live Admin Events</h3>
+        <div id="adminEvents" style="max-height:300px;overflow-y:auto;font-family:var(--font-mono);font-size:0.8rem">
+          <div class="text-muted text-sm">Waiting for events...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Users -->
+    <div id="users" class="page">
+      <h2 class="mb-lg"><span class="text-gradient">User Management</span></h2>
+      <div class="glass card mb-lg">
+        <div class="flex items-center gap-md mb-md" style="flex-wrap:wrap">
+          <input type="text" id="userSearch" class="form-input" placeholder="Search users..." style="max-width:300px" oninput="searchUsers()">
+          <span class="text-sm text-muted" id="userCount"></span>
+        </div>
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Username</th><th>Email</th><th>Role</th><th>Verified</th><th>Active</th><th>Created</th><th>Actions</th></tr></thead>
+            <tbody id="usersTable"></tbody>
+          </table>
+        </div>
+        <div class="flex justify-center gap-sm mt-md" id="userPagination"></div>
+      </div>
+    </div>
+
+    <!-- Logs -->
+    <div id="logs" class="page">
+      <h2 class="mb-lg"><span class="text-gradient">System Logs</span></h2>
+      <div class="glass card mb-lg">
+        <div class="flex items-center gap-md mb-md" style="flex-wrap:wrap">
+          <select id="logLevelFilter" class="form-select" style="width:auto" onchange="loadLogs()">
+            <option value="">All Levels</option>
+            <option value="DEBUG">DEBUG</option>
+            <option value="INFO">INFO</option>
+            <option value="WARN">WARN</option>
+            <option value="ERROR">ERROR</option>
+          </select>
+          <input type="text" id="logSearch" class="form-input" placeholder="Search logs..." style="max-width:300px" oninput="debounceLoadLogs()">
+        </div>
+        <div id="logsContainer" style="max-height:600px;overflow-y:auto"></div>
+        <div class="flex justify-center gap-sm mt-md" id="logPagination"></div>
+      </div>
+    </div>
+
+    <!-- Settings -->
+    <div id="adminSettings" class="page">
+      <h2 class="mb-lg"><span class="text-gradient">Global Settings</span></h2>
+      <div class="glass card mb-lg">
+        <div class="flex flex-col gap-lg" id="settingsForm"></div>
+        <button class="btn btn-primary mt-lg" onclick="saveSettings()">Save Settings</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script src="/js/theme.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const token = localStorage.getItem('sut_token');
+    const user = JSON.parse(localStorage.getItem('sut_user') || '{}');
+    if (!token || !['admin','super_admin'].includes(user.role)) {
+      window.location.href = '/app';
+    }
+
+    const headers = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
+    const fmtBytes = b => b > 1073741824 ? (b/1073741824).toFixed(1)+'GB' : b > 1048576 ? (b/1048576).toFixed(1)+'MB' : (b/1024).toFixed(0)+'KB';
+    const fmtUptime = s => { const d=Math.floor(s/86400); const h=Math.floor((s%86400)/3600); const m=Math.floor((s%3600)/60); return d>0?`${d}d ${h}h ${m}m`:`${h}h ${m}m`; };
+    const escapeHtml = t => { const d=document.createElement('div'); d.textContent=t; return d.innerHTML; };
+
+    function showToast(msg, type='success') {
+      const c = document.getElementById('toastContainer');
+      const t = document.createElement('div');
+      t.className = `toast toast-${type}`;
+      t.textContent = msg;
+      c.appendChild(t);
+      setTimeout(() => t.remove(), 4000);
+    }
+
+    // Socket for live events
+    const socket = io({ auth: { token } });
+    socket.on('ADMIN_BROADCAST', (data) => {
+      const el = document.getElementById('adminEvents');
+      const time = new Date(data.timestamp).toLocaleTimeString();
+      el.innerHTML = `<div style="padding:4px 0;border-bottom:1px solid var(--glass-border)">[${time}] ${escapeHtml(data.message)}</div>` + el.innerHTML;
+    });
+    socket.on('CONNECTION_COUNT', (data) => {
+      document.getElementById('kpiConnections').textContent = data.count;
+    });
+
+    // Dashboard
+    async function loadDashboard() {
+      try {
+        const [statsRes, connRes] = await Promise.all([
+          fetch('/api/admin/stats', { headers }),
+          fetch('/api/admin/connections', { headers }),
+        ]);
+        const stats = await statsRes.json();
+        const conn = await connRes.json();
+
+        document.getElementById('kpiUsers').textContent = stats.users.total;
+        document.getElementById('kpiActive').textContent = stats.users.active;
+        document.getElementById('kpiConnections').textContent = conn.connections;
+        document.getElementById('kpiUptime').textContent = fmtUptime(stats.server.uptime);
+        document.getElementById('memRss').textContent = fmtBytes(stats.server.memoryRSS);
+        document.getElementById('memHeap').textContent = fmtBytes(stats.server.memoryHeap);
+        document.getElementById('cpuLoad').textContent = stats.server.cpuLoad[0]?.toFixed(2) || '0';
+        document.getElementById('platform').textContent = stats.server.platform;
+        document.getElementById('nodeVer').textContent = stats.server.nodeVersion;
+        document.getElementById('totalRecords').textContent = stats.tracking.totalRecords.toLocaleString();
+        document.getElementById('totalHours').textContent = (stats.tracking.totalSeconds / 3600).toFixed(1) + 'h';
+        document.getElementById('verifiedUsers').textContent = stats.users.verified;
+      } catch (e) { showToast('Failed to load dashboard', 'error'); }
+    }
+
+    // Users
+    let userPage = 1;
+    async function loadUsers(page = 1) {
+      userPage = page;
+      const search = document.getElementById('userSearch').value;
+      try {
+        const res = await fetch(`/api/admin/users?page=${page}&search=${encodeURIComponent(search)}`, { headers });
+        const data = await res.json();
+        document.getElementById('userCount').textContent = `${data.total} users total`;
+
+        let html = '';
+        data.users.forEach(u => {
+          const roleOptions = ['user','moderator','admin'].map(r =>
+            `<option value="${r}" ${u.role===r?'selected':''}>${r}</option>`
+          ).join('');
+          const isSuperAdmin = u.role === 'super_admin';
+          html += `<tr>
+            <td style="font-weight:600">${escapeHtml(u.username)}</td>
+            <td class="text-sm">${escapeHtml(u.email)}</td>
+            <td>${isSuperAdmin ? '<span class="badge badge-warning">super_admin</span>' : `<select class="form-select" style="width:auto;padding:6px 10px;font-size:0.8rem" onchange="updateUser('${u.userId}',{role:this.value})">${roleOptions}</select>`}</td>
+            <td>${u.emailVerified ? '<span class="badge badge-success">Yes</span>' : '<span class="badge badge-danger">No</span>'}</td>
+            <td>${isSuperAdmin ? '<span class="badge badge-info">—</span>' : `<label class="toggle"><input type="checkbox" ${u.active?'checked':''} onchange="updateUser('${u.userId}',{active:this.checked})"><span class="toggle-slider"></span></label>`}</td>
+            <td class="text-sm text-muted">${new Date(u.createdAt).toLocaleDateString()}</td>
+            <td class="text-sm">${u.totalStandingSeconds ? (u.totalStandingSeconds/3600).toFixed(1)+'h' : '0h'}</td>
+          </tr>`;
+        });
+        document.getElementById('usersTable').innerHTML = html || '<tr><td colspan="7" class="text-center text-muted">No users found</td></tr>';
+
+        // Pagination
+        let pag = '';
+        for (let i = 1; i <= data.pages; i++) {
+          pag += `<button class="btn btn-sm ${i===page?'btn-primary':'btn-ghost'}" onclick="loadUsers(${i})">${i}</button>`;
+        }
+        document.getElementById('userPagination').innerHTML = pag;
+      } catch (e) { showToast('Failed to load users', 'error'); }
+    }
+
+    let searchTimeout;
+    function searchUsers() {
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(() => loadUsers(1), 300);
+    }
+
+    async function updateUser(userId, updates) {
+      try {
+        const res = await fetch(`/api/admin/users/${userId}`, {
+          method: 'PUT', headers, body: JSON.stringify(updates)
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        showToast('User updated');
+        loadUsers(userPage);
+      } catch (e) { showToast(e.message, 'error'); }
+    }
+
+    // Logs
+    let logPage = 1;
+    async function loadLogs(page = 1) {
+      logPage = page;
+      const level = document.getElementById('logLevelFilter').value;
+      const search = document.getElementById('logSearch').value;
+      try {
+        const res = await fetch(`/api/admin/logs?page=${page}&level=${level}&search=${encodeURIComponent(search)}`, { headers });
+        const data = await res.json();
+        let html = '';
+        data.logs.forEach(log => {
+          const time = new Date(log.createdAt).toLocaleString();
+          html += `<div class="log-entry log-${log.level}">
+            <span style="color:var(--fg-muted)">${time}</span>
+            <span class="badge badge-${log.level==='ERROR'?'danger':log.level==='WARN'?'warning':'info'}" style="margin:0 8px">${log.level}</span>
+            ${escapeHtml(log.message)}
+            ${log.source ? `<span class="text-muted"> [${escapeHtml(log.source)}]</span>` : ''}
+          </div>`;
+        });
+        document.getElementById('logsContainer').innerHTML = html || '<div class="text-center text-muted" style="padding:20px">No logs found</div>';
+
+        let pag = '';
+        for (let i = 1; i <= Math.min(data.pages, 10); i++) {
+          pag += `<button class="btn btn-sm ${i===page?'btn-primary':'btn-ghost'}" onclick="loadLogs(${i})">${i}</button>`;
+        }
+        document.getElementById('logPagination').innerHTML = pag;
+      } catch (e) { showToast('Failed to load logs', 'error'); }
+    }
+
+    let logTimeout;
+    function debounceLoadLogs() {
+      clearTimeout(logTimeout);
+      logTimeout = setTimeout(() => loadLogs(1), 300);
+    }
+
+    // Settings
+    let currentSettings = {};
+    async function loadSettings() {
+      try {
+        const res = await fetch('/api/admin/settings', { headers });
+        currentSettings = await res.json();
+        let html = '';
+        for (const [key, obj] of Object.entries(currentSettings)) {
+          const val = obj.value;
+          const desc = obj.description || key;
+          if (typeof val === 'boolean') {
+            html += `<div class="flex items-center justify-between">
+              <div><div class="form-label">${escapeHtml(key)}</div><span class="text-xs text-muted">${escapeHtml(desc)}</span></div>
+              <label class="toggle"><input type="checkbox" data-key="${key}" ${val?'checked':''}><span class="toggle-slider"></span></label>
+            </div>`;
+          } else if (typeof val === 'number') {
+            html += `<div class="flex items-center justify-between gap-md">
+              <div><div class="form-label">${escapeHtml(key)}</div><span class="text-xs text-muted">${escapeHtml(desc)}</span></div>
+              <input type="number" data-key="${key}" class="form-input" style="width:100px" value="${val}">
+            </div>`;
+          } else {
+            html += `<div class="flex items-center justify-between gap-md">
+              <div><div class="form-label">${escapeHtml(key)}</div><span class="text-xs text-muted">${escapeHtml(desc)}</span></div>
+              <input type="text" data-key="${key}" class="form-input" style="width:200px" value="${escapeHtml(String(val))}">
+            </div>`;
+          }
+        }
+        document.getElementById('settingsForm').innerHTML = html;
+      } catch (e) { showToast('Failed to load settings', 'error'); }
+    }
+
+    async function saveSettings() {
+      const updates = {};
+      document.querySelectorAll('[data-key]').forEach(el => {
+        const key = el.dataset.key;
+        if (el.type === 'checkbox') updates[key] = el.checked;
+        else if (el.type === 'number') updates[key] = parseInt(el.value);
+        else updates[key] = el.value;
+      });
+      try {
+        const res = await fetch('/api/admin/settings', {
+          method: 'PUT', headers, body: JSON.stringify(updates)
+        });
+        if (!res.ok) throw new Error('Failed');
+        showToast('Settings saved');
+      } catch (e) { showToast('Failed to save settings', 'error'); }
+    }
+
+    // Page navigation
+    function showAdminPage(id, btn) {
+      document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+      document.getElementById(id).classList.add('active');
+      document.querySelectorAll('.nav-link').forEach(b => b.classList.remove('active'));
+      if (btn) btn.classList.add('active');
+
+      if (id === 'dashboard') loadDashboard();
+      else if (id === 'users') loadUsers();
+      else if (id === 'logs') loadLogs();
+      else if (id === 'adminSettings') loadSettings();
+    }
+
+    // Auto-refresh dashboard
+    setInterval(() => {
+      if (document.getElementById('dashboard').classList.contains('active')) loadDashboard();
+    }, 15000);
+
+    loadDashboard();
+  </script>
+</body>
+</html>

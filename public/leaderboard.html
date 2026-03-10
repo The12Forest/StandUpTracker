@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Leaderboard — StandUpTracker</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#0a0e17">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <nav class="navbar">
+    <div class="navbar-inner">
+      <a href="/" class="navbar-brand">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        <span class="text-gradient">StandUpTracker</span>
+      </a>
+      <div class="navbar-nav" id="navMenu">
+        <a href="/leaderboard" class="nav-link active">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 21v-6M12 21V3M16 21v-4M20 21v-2M4 21v-8"/></svg>
+          Leaderboard
+        </a>
+        <a href="/login" class="nav-link">Login</a>
+        <a href="/register" class="btn btn-primary btn-sm">Get Started</a>
+      </div>
+      <button class="navbar-menu-btn" onclick="document.getElementById('navMenu').classList.toggle('open')">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+    </div>
+  </nav>
+
+  <div class="container page-content">
+    <h1 class="text-center mb-lg"><span class="text-gradient">Global Leaderboard</span></h1>
+    
+    <div class="tabs mb-lg">
+      <button class="tab-btn active" onclick="loadLeaderboard('all', this)">All Time</button>
+      <button class="tab-btn" onclick="loadLeaderboard('month', this)">This Month</button>
+      <button class="tab-btn" onclick="loadLeaderboard('week', this)">This Week</button>
+    </div>
+
+    <div id="leaderboardContent" class="glass card">
+      <div class="flex justify-center" style="padding:40px"><div class="spinner"></div></div>
+    </div>
+  </div>
+
+  <script src="/js/theme.js"></script>
+  <script>
+    const LEVELS = ['','🌱','🌿','🌳','⭐','🌟','💫','👑','🏆','🔱','✨'];
+    const pad = n => n < 10 ? '0' + n : n;
+    const fmtHours = s => { const h = Math.floor(s/3600); const m = Math.floor((s%3600)/60); return h > 0 ? `${h}h ${pad(m)}m` : `${m}m`; };
+
+    async function loadLeaderboard(period, btn) {
+      if (btn) {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+      }
+      const container = document.getElementById('leaderboardContent');
+      container.innerHTML = '<div class="flex justify-center" style="padding:40px"><div class="spinner"></div></div>';
+
+      try {
+        const res = await fetch(`/api/leaderboard?period=${period}`);
+        const data = await res.json();
+
+        if (!data.length) {
+          container.innerHTML = '<p class="text-center text-muted" style="padding:40px">No data yet. Be the first to track!</p>';
+          return;
+        }
+
+        let html = '<div class="table-wrapper"><table><thead><tr><th>Rank</th><th>User</th><th>Level</th><th>Total Time</th><th>Days Active</th></tr></thead><tbody>';
+        data.forEach(entry => {
+          const rankClass = entry.rank <= 3 ? `lb-rank lb-rank-${entry.rank}` : 'lb-rank';
+          html += `<tr>
+            <td><div class="${rankClass}" style="display:inline-flex;width:36px;height:36px;${entry.rank > 3 ? 'background:var(--bg-card);' : ''}">${entry.rank}</div></td>
+            <td style="font-weight:600">${escapeHtml(entry.username)}</td>
+            <td>${LEVELS[entry.level] || '🌱'} Lv.${entry.level}</td>
+            <td class="text-mono">${fmtHours(entry.totalSeconds)}</td>
+            <td>${entry.daysActive}</td>
+          </tr>`;
+        });
+        html += '</tbody></table></div>';
+        container.innerHTML = html;
+      } catch (err) {
+        container.innerHTML = '<p class="text-center" style="padding:40px;color:var(--danger)">Failed to load leaderboard</p>';
+      }
+    }
+
+    function escapeHtml(text) {
+      const d = document.createElement('div');
+      d.textContent = text;
+      return d.innerHTML;
+    }
+
+    loadLeaderboard('all');
+  </script>
+</body>
+</html>

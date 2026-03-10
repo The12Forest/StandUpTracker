@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>StandUpTracker — Track Your Standing Time</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/icon512_rounded.png">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#0a0e17">
+  <meta name="description" content="A real-time multi-device standing time tracker with gamification, leaderboards, and WebSocket sync.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <!-- Navbar -->
+  <nav class="navbar">
+    <div class="navbar-inner">
+      <a href="/" class="navbar-brand">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        <span class="text-gradient">StandUpTracker</span>
+      </a>
+      <div class="navbar-nav" id="navMenu">
+        <a href="/leaderboard" class="nav-link">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 21v-6M12 21V3M16 21v-4M20 21v-2M4 21v-8"/></svg>
+          Leaderboard
+        </a>
+        <a href="/login" class="nav-link">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+          Login
+        </a>
+        <a href="/register" class="btn btn-primary btn-sm">Get Started</a>
+      </div>
+      <button class="navbar-menu-btn" onclick="document.getElementById('navMenu').classList.toggle('open')">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div>
+      <h1><span class="text-gradient">Stand More.</span><br>Live Better.</h1>
+      <p>Track your standing time across all your devices in real-time. Compete on the global leaderboard, earn achievements, and build healthy habits — together.</p>
+      <div class="flex justify-center gap-md" style="flex-wrap:wrap">
+        <a href="/register" class="btn btn-primary btn-lg">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:20px;height:20px"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          Start Tracking — Free
+        </a>
+        <a href="/leaderboard" class="btn btn-ghost btn-lg">View Leaderboard</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <section class="container-wide" style="padding-bottom:80px">
+    <h2 class="text-center mb-lg">Everything you need to stand more</h2>
+    <div class="feature-grid">
+      <div class="glass feature-card">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <h3>Real-Time Tracking</h3>
+        <p>Start and stop your timer from any device. WebSocket sync keeps everything in perfect harmony.</p>
+      </div>
+      <div class="glass feature-card">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 21v-6M12 21V3M16 21v-4M20 21v-2M4 21v-8"/></svg>
+        <h3>Global Leaderboard</h3>
+        <p>Compete with users worldwide. Climb the ranks and prove your dedication to a healthier lifestyle.</p>
+      </div>
+      <div class="glass feature-card">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+        <h3>Achievements & Levels</h3>
+        <p>Unlock achievements, level up, and complete daily challenges. Gamification that keeps you motivated.</p>
+      </div>
+      <div class="glass feature-card">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+        <h3>Multi-Device Sync</h3>
+        <p>Start on your phone, stop on your desktop. Your timer follows you everywhere, instantly.</p>
+      </div>
+      <div class="glass feature-card">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        <h3>Secure by Design</h3>
+        <p>TOTP & email 2FA, Argon2 password hashing, JWT sessions. Your data is protected by enterprise-grade security.</p>
+      </div>
+      <div class="glass feature-card">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+        <h3>PWA / Offline Ready</h3>
+        <p>Install as an app on any device. Works offline with automatic background sync when you reconnect.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer style="text-align:center;padding:32px 16px;color:var(--fg-muted);font-size:0.85rem;border-top:1px solid var(--glass-border)">
+    <p>&copy; 2026 StandUpTracker. Built with dedication to healthier work habits.</p>
+  </footer>
+
+  <script src="/js/theme.js"></script>
+</body>
+</html>
