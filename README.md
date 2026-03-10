@@ -1,26 +1,28 @@
-# StandUP Tracker
+# StandUpTracker
 
-A full-stack standing time tracker with gamification, real-time sync, and admin dashboard.
+A full-stack standing-desk time tracker with gamification, real-time sync, social features, and a full admin dashboard.
 
 ## Features
 
-- **Timer** — Track standing sessions with start/stop, daily totals, streaks
-- **Gamification** — Levels, achievements, daily & weekly challenges, celebrations
+- **Timer** — Track standing sessions with start/stop, daily totals, personal streak
+- **Dashboard** — Activity heatmap (52 weeks), bar chart of last 30 days, AI productivity tips
+- **Gamification** — Levels, achievements, daily goals
 - **Real-time Sync** — Socket.io WebSocket keeps all devices in sync
-- **Authentication** — JWT auth, email verification, TOTP & email 2FA
-- **Admin Dashboard** — Server health, user management, logs, global settings
-- **Public Leaderboard** — Ranked standings with period filtering
+- **Authentication** — JWT + HttpOnly cookies, email verification, TOTP and email 2FA
+- **Admin Dashboard** — Server health, user management, audit logs, global settings, extended statistics
+- **Social** — Friend requests, friend streaks, group streaks
+- **Leaderboard** — Public ranked standings with period filtering
+- **AI Advisor** — Optional Ollama-powered productivity coaching (per-user opt-in)
 - **PWA** — Installable, works offline with service worker caching
-- **Multi-device** — Transparent sync across all logged-in devices
 
 ## Tech Stack
 
 | Layer | Tech |
 |-------|------|
-| Backend | Node.js, Express, Socket.io |
-| Database | MongoDB (Mongoose) |
-| Auth | JWT, Argon2, TOTP (otplib), Nodemailer |
-| Frontend | Vanilla JS, CSS custom properties, Chart.js |
+| Backend | Node.js 20, Express 4, Socket.io 4 |
+| Database | MongoDB 7, Mongoose 8 |
+| Auth | JWT (HttpOnly cookies), Argon2, TOTP (otplib), Nodemailer |
+| Frontend | React 19, Vite 7, Zustand 5, Tailwind CSS 4, Chart.js 4 |
 | Infrastructure | Docker, Docker Compose |
 
 ## Quick Start
@@ -28,8 +30,8 @@ A full-stack standing time tracker with gamification, real-time sync, and admin 
 ### Docker (Recommended)
 
 ```bash
-cp .env.example .env
-# Edit .env with your settings
+# Only MONGO_URI is required — all other settings are managed via the Admin Console
+export MONGO_URI=mongodb://mongo:27017/standuptracker
 docker compose up -d
 ```
 
@@ -39,30 +41,39 @@ The app will be available at `http://localhost:3000`.
 
 ```bash
 # Requires Node.js 20+ and a running MongoDB instance
-cp .env.example .env
-# Edit .env — set MONGO_URI to your local MongoDB
+export MONGO_URI=mongodb://localhost:27017/standuptracker
+
+# Start backend
+npm install
+npm start
+
+# Start frontend (separate terminal)
+cd frontend
 npm install
 npm run dev
 ```
 
+Frontend dev server runs on `http://localhost:5173` and proxies API requests to the backend.
+
 ## Environment Variables
+
+Only **one** environment variable is required to run the app:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PORT` | `3000` | Server port |
 | `MONGO_URI` | `mongodb://mongo:27017/standuptracker` | MongoDB connection string |
-| `JWT_SECRET` | *(required)* | Secret for JWT signing |
-| `JWT_EXPIRES_IN` | `7d` | Token expiry |
-| `SMTP_HOST` | — | SMTP server for email |
-| `SMTP_PORT` | `587` | SMTP port |
-| `SMTP_USER` | — | SMTP username |
-| `SMTP_PASS` | — | SMTP password |
-| `SMTP_FROM` | `noreply@standuptracker.app` | Sender address |
-| `APP_URL` | `http://localhost:3000` | Public URL (for email links) |
 
-## First User
+All other settings (JWT secret, SMTP, app URL, AI configuration, etc.) are generated automatically or managed through the **Admin Console** at `/admin` and stored in the database. There is no `.env` file to maintain beyond the database connection.
 
-The first registered user automatically becomes **super_admin** with full access. Subsequent users are regular users.
+## First Launch
+
+On first launch, the app detects that no users exist and redirects to `/setup` — an onboarding wizard that lets you:
+
+1. Configure SMTP (for email verification and 2FA)
+2. Set the public app URL
+3. Create the initial **super_admin** account
+
+After completing setup, the admin can manage all settings from the **Admin Console**. Subsequent registered users are assigned the `user` role by default.
 
 ## API Endpoints
 
@@ -96,9 +107,42 @@ The first registered user automatically becomes **super_admin** with full access
 | GET | `/api/admin/stats` | Server health & stats |
 | GET | `/api/admin/users` | User list (paginated) |
 | PUT | `/api/admin/users/:userId` | Update user role/active |
+| DELETE | `/api/admin/users/:userId` | Delete user |
+| POST | `/api/admin/users/bulk-action` | Bulk role/active changes |
+| POST | `/api/admin/impersonate/:userId` | Impersonate user |
 | GET | `/api/admin/logs` | Server logs (paginated) |
 | GET | `/api/admin/settings` | Global settings |
 | PUT | `/api/admin/settings` | Update settings |
+
+### Social
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/social/friends` | Friend list |
+| POST | `/api/social/friends/request` | Send friend request |
+| PUT | `/api/social/friends/:id` | Accept/decline request |
+| DELETE | `/api/social/friends/:id` | Remove friend |
+
+### Groups
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/groups` | List user's groups |
+| POST | `/api/groups` | Create group |
+| PUT | `/api/groups/:id` | Update group |
+| DELETE | `/api/groups/:id` | Delete group |
+| POST | `/api/groups/:id/members` | Add member |
+| DELETE | `/api/groups/:id/members/:userId` | Remove member |
+
+### AI
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/ai/advice` | Get AI productivity tip |
+| GET | `/api/ai/models` | List available Ollama models |
+
+### Setup
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/setup/status` | Check if setup is needed |
+| POST | `/api/setup/complete` | Complete initial setup |
 
 ### Public
 | Method | Path | Description |
@@ -110,36 +154,37 @@ The first registered user automatically becomes **super_admin** with full access
 
 | Event | Direction | Description |
 |-------|-----------|-------------|
-| `COUNTER_START` | Client → Server | Start global counter |
-| `COUNTER_STOP` | Client → Server | Stop global counter |
+| `COUNTER_START` | Client → Server | Start standing session |
+| `COUNTER_STOP` | Client → Server | Stop standing session |
 | `STATE_SYNC` | Server → Client | Counter state broadcast |
 | `TRACKING_UPDATE` | Client ↔ Server | Sync tracking across devices |
+| `FRIEND_ONLINE` | Server → Client | Friend came online |
+| `FRIEND_OFFLINE` | Server → Client | Friend went offline |
 | `HEARTBEAT` | Client → Server | Keep connection alive |
 
 ## Project Structure
 
 ```
 ├── server/
-│   ├── index.js          # Express + Socket.io server
-│   ├── config.js         # Environment config
+│   ├── index.js          # Express + Socket.io entry point
+│   ├── config.js         # DB-backed config with env fallbacks
 │   ├── models/           # Mongoose models
 │   ├── routes/           # REST API routes
-│   ├── middleware/        # Auth middleware
-│   ├── socket/           # WebSocket handlers
-│   └── utils/            # Email, TOTP, logging
-├── public/
-│   ├── index.html        # Landing page
-│   ├── login.html        # Login
-│   ├── register.html     # Registration
-│   ├── app.html          # Main tracker app
-│   ├── admin.html        # Admin dashboard
-│   ├── leaderboard.html  # Public leaderboard
-│   ├── css/style.css     # Design system
-│   ├── js/               # Client modules
-│   └── sw.js             # Service worker
+│   ├── middleware/        # Auth guards
+│   ├── socket/           # WebSocket event handler
+│   └── utils/            # Email, TOTP, streaks, logging
+├── frontend/
+│   ├── src/
+│   │   ├── pages/        # Route-level React components
+│   │   ├── components/   # Shared UI components (heatmap, charts…)
+│   │   ├── stores/       # Zustand state stores
+│   │   ├── hooks/        # Custom React hooks
+│   │   └── lib/          # API client, utils, migration
+│   ├── public/           # Static assets & PWA manifest
+│   └── vite.config.js    # Vite + proxy config
 ├── Dockerfile
 ├── docker-compose.yml
-└── package.json
+└── package.json          # Backend only
 ```
 
 ## License
