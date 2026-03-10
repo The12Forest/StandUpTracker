@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   Shield, Users, Activity, Server, ScrollText, Settings,
-  Search, RefreshCw, Eye, Sliders, UserCheck, Calendar,
+  Search, RefreshCw, Eye, EyeOff, Sliders, UserCheck, Calendar,
   Trash2, Lock, Unlock, KeyRound, MailCheck, Ban, HardDrive,
   Cpu, Clock, Database, TrendingUp, Globe, MailX, UsersRound, Mail,
   Brain, Info, BarChart3, Heart, UserPlus
@@ -583,7 +583,11 @@ function SettingsTab() {
   const [ollamaModels, setOllamaModels] = useState([]);
   const [loadingModels, setLoadingModels] = useState(false);
   const [tooltip, setTooltip] = useState(null);
+  const [visiblePasswords, setVisiblePasswords] = useState({});
   const toast = useToastStore();
+
+  const SENSITIVE_KEYS = new Set(['smtpPass', 'jwtSecret']);
+  const HIDDEN_KEYS = new Set(['defaultTheme']);
 
   const loadSettings = () => {
     api('/api/admin/settings').then(setSettings).catch(() => {});
@@ -646,6 +650,7 @@ function SettingsTab() {
   // Group settings by section
   const sections = {};
   for (const [key, meta] of Object.entries(settings)) {
+    if (HIDDEN_KEYS.has(key)) continue;
     const section = meta.section || 'general';
     if (!sections[section]) sections[section] = [];
     sections[section].push({ key, ...meta });
@@ -727,6 +732,22 @@ function SettingsTab() {
                   >
                     <div className={`w-4 h-4 bg-white rounded-full absolute top-0.5 transition-all ${value ? 'left-5' : 'left-0.5'}`} />
                   </button>
+                ) : SENSITIVE_KEYS.has(key) ? (
+                  <div className="flex items-center gap-2 flex-1">
+                    <input
+                      type={visiblePasswords[key] ? 'text' : 'password'}
+                      defaultValue={typeof value === 'string' ? value : JSON.stringify(value)}
+                      onBlur={(e) => saveSetting(key, e.target.value)}
+                      className="glass-input flex-1 text-sm"
+                    />
+                    <button
+                      onClick={() => setVisiblePasswords((prev) => ({ ...prev, [key]: !prev[key] }))}
+                      className="text-zen-500 hover:text-zen-300 transition-colors p-1"
+                      title={visiblePasswords[key] ? 'Hide' : 'Show'}
+                    >
+                      {visiblePasswords[key] ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </button>
+                  </div>
                 ) : (
                   <input
                     defaultValue={typeof value === 'string' ? value : JSON.stringify(value)}

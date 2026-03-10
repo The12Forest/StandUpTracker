@@ -55,6 +55,9 @@ fi
 
 read -rp "Image version (e.g. 1.0.0): " VERSION
 read -rp "Dockerfile path [./Dockerfile]: " DOCKERFILE_INPUT
+if [ "${DOCKERFILE_INPUT}" = "" ]; then
+  DOCKERFILE_INPUT="./Dockerfile"
+fi
 DOCKERFILE="${DOCKERFILE_INPUT:-./Dockerfile}"
 
 if [ -z "${VERSION}" ]; then

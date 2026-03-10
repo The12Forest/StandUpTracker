@@ -6,7 +6,7 @@ let transporter = null;
 let lastSmtpHash = '';
 
 function smtpHash(smtp) {
-  return `${smtp.host}:${smtp.port}:${smtp.user}:${smtp.secure}`;
+  return `${smtp.host}:${smtp.port}:${smtp.user}:${smtp.pass}:${smtp.secure}`;
 }
 
 async function getTransporter() {

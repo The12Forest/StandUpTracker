@@ -118,10 +118,10 @@ async function dailyStreakCleanup() {
   const threshold = await Settings.get('streakThresholdMinutes') || 3;
   const yesterday = yesterdayStr();
 
-  // Friend streaks that weren't synced yesterday
+  // Friend streaks that weren't synced yesterday or today
   const staleStreaks = await FriendStreak.find({
     currentStreak: { $gt: 0 },
-    lastSyncDate: { $ne: yesterday, $ne: todayStr() },
+    lastSyncDate: { $nin: [yesterday, todayStr()] },
   });
 
   for (const streak of staleStreaks) {
@@ -137,7 +137,7 @@ async function dailyStreakCleanup() {
   // Group streaks
   const staleGroups = await Group.find({
     currentStreak: { $gt: 0 },
-    lastSyncDate: { $ne: yesterday, $ne: todayStr() },
+    lastSyncDate: { $nin: [yesterday, todayStr()] },
   });
 
   for (const group of staleGroups) {

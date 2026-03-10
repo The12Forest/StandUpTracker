@@ -152,9 +152,10 @@ router.get('/users', requireRole(...adminRoles), async (req, res) => {
     const { page = 1, limit = 50, search } = req.query;
     const query = {};
     if (search) {
+      const escaped = String(search).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       query.$or = [
-        { username: { $regex: search, $options: 'i' } },
-        { email: { $regex: search, $options: 'i' } },
+        { username: { $regex: escaped, $options: 'i' } },
+        { email: { $regex: escaped, $options: 'i' } },
       ];
     }
     const users = await User.find(query)
@@ -426,7 +427,10 @@ router.get('/logs', requireRole(...adminRoles), async (req, res) => {
     const { level, page = 1, limit = 100, search } = req.query;
     const query = {};
     if (level) query.level = level.toUpperCase();
-    if (search) query.message = { $regex: search, $options: 'i' };
+    if (search) {
+      const escaped = String(search).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      query.message = { $regex: escaped, $options: 'i' };
+    }
 
     const logs = await Log.find(query)
       .sort({ createdAt: -1 })

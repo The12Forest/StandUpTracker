@@ -8,6 +8,7 @@ const router = express.Router();
 router.get('/', async (req, res) => {
   try {
     const { period = 'all', limit = 50 } = req.query;
+    const safeLimit = Math.min(parseInt(limit) || 50, 200);
 
     let matchStage = {};
     if (period === 'week') {
@@ -30,7 +31,7 @@ router.get('/', async (req, res) => {
         },
       },
       { $sort: { totalSeconds: -1 } },
-      { $limit: parseInt(limit) },
+      { $limit: safeLimit },
     ];
 
     const rankings = await TrackingData.aggregate(pipeline);

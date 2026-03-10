@@ -10,7 +10,7 @@ const { impersonationGuard, softBanCheck, lastActiveTouch } = require('../middle
 const { sendVerificationEmail, send2faCode } = require('../utils/email');
 const totp = require('../utils/totp');
 const logger = require('../utils/logger');
-const { getJwtSecret, getJwtExpiresIn, getAppConfig } = require('../utils/settings');
+const { getJwtSecret, getJwtExpiresIn, getAppConfig, getSetting } = require('../utils/settings');
 
 const router = express.Router();
 
@@ -45,6 +45,11 @@ async function setAuthCookie(res, token) {
 // Register
 router.post('/register', authLimiter, async (req, res) => {
   try {
+    const regEnabled = await getSetting('registrationEnabled');
+    if (regEnabled === false) {
+      return res.status(403).json({ error: 'Registration is currently disabled' });
+    }
+
     const { username, email, password } = req.body;
     if (!username || !email || !password) {
       return res.status(400).json({ error: 'Username, email, and password are required' });

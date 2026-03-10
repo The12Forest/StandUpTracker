@@ -12,18 +12,21 @@ export default function SettingsPage() {
   const refreshUser = useAuthStore((s) => s.refreshUser);
   const toast = useToastStore();
 
-  const [profile, setProfile] = useState({ dailyGoalMinutes: 30, theme: 'dark', geminiOptIn: false });
+  const [profile, setProfile] = useState({ dailyGoalMinutes: 30, geminiOptIn: false });
   const [pw, setPw] = useState({ current: '', new: '', confirm: '' });
   const [newEmail, setNewEmail] = useState('');
   const [emailPassword, setEmailPassword] = useState('');
+  const [email2faPassword, setEmail2faPassword] = useState('');
+  const [showEmail2faPrompt, setShowEmail2faPrompt] = useState(false);
   const [totpSetup, setTotpSetup] = useState(null);
   const [totpCode, setTotpCode] = useState('');
+  const [totpDisablePassword, setTotpDisablePassword] = useState('');
+  const [showTotpDisablePrompt, setShowTotpDisablePrompt] = useState(false);
 
   useEffect(() => {
     if (user) {
       setProfile({
         dailyGoalMinutes: user.dailyGoalMinutes || 30,
-        theme: user.theme || 'dark',
         geminiOptIn: user.geminiOptIn || false,
       });
     }
@@ -73,13 +76,34 @@ export default function SettingsPage() {
     } catch (err) { toast.error(err.message); }
   };
   const disableTOTP = async () => {
-    try { await api('/api/auth/2fa/totp/disable', { method: 'POST' }); toast.success('TOTP 2FA disabled'); refreshUser(); }
-    catch (err) { toast.error(err.message); }
+    if (!showTotpDisablePrompt) { setShowTotpDisablePrompt(true); return; }
+    if (!totpDisablePassword) { toast.error('Password required to disable TOTP'); return; }
+    try {
+      await api('/api/auth/2fa/totp/disable', { method: 'POST', body: JSON.stringify({ password: totpDisablePassword }) });
+      toast.success('TOTP 2FA disabled');
+      setShowTotpDisablePrompt(false);
+      setTotpDisablePassword('');
+      refreshUser();
+    } catch (err) { toast.error(err.message); }
   };
   const toggleEmail2FA = async () => {
-    const endpoint = user?.email2faEnabled ? '/api/auth/2fa/email/disable' : '/api/auth/2fa/email/enable';
-    try { await api(endpoint, { method: 'POST' }); toast.success(user?.email2faEnabled ? 'Email 2FA disabled' : 'Email 2FA enabled'); refreshUser(); }
-    catch (err) { toast.error(err.message); }
+    if (user?.email2faEnabled) {
+      if (!showEmail2faPrompt) { setShowEmail2faPrompt(true); return; }
+      if (!email2faPassword) { toast.error('Password required to disable Email 2FA'); return; }
+      try {
+        await api('/api/auth/2fa/email/disable', { method: 'POST', body: JSON.stringify({ password: email2faPassword }) });
+        toast.success('Email 2FA disabled');
+        setShowEmail2faPrompt(false);
+        setEmail2faPassword('');
+        refreshUser();
+      } catch (err) { toast.error(err.message); }
+    } else {
+      try {
+        await api('/api/auth/2fa/email/enable', { method: 'POST' });
+        toast.success('Email 2FA enabled');
+        refreshUser();
+      } catch (err) { toast.error(err.message); }
+    }
   };
 
   return (
@@ -155,13 +179,6 @@ export default function SettingsPage() {
               onChange={(e) => setProfile({ ...profile, dailyGoalMinutes: parseInt(e.target.value) || 30 })}
               className="glass-input w-32" />
           </div>
-          <div>
-            <label className="text-xs text-zen-500 mb-1 block">Theme</label>
-            <select value={profile.theme} onChange={(e) => setProfile({ ...profile, theme: e.target.value })} className="glass-input w-40">
-              <option value="dark">Dark</option>
-              <option value="light">Light</option>
-            </select>
-          </div>
           <div className="flex items-center justify-between py-2 border-t border-zen-700/30">
             <div>
               <p className="text-sm text-zen-200 flex items-center gap-2"><Sparkles size={14} /> AI Advisor</p>
@@ -214,6 +231,24 @@ export default function SettingsPage() {
             )}
           </div>
 
+          {showTotpDisablePrompt && (
+            <div className="bg-zen-800/40 rounded-xl p-4 space-y-3">
+              <p className="text-xs text-zen-400">Enter your password to disable TOTP:</p>
+              <input
+                type="password"
+                value={totpDisablePassword}
+                onChange={(e) => setTotpDisablePassword(e.target.value)}
+                className="glass-input w-full text-sm"
+                placeholder="Current password"
+                autoComplete="current-password"
+              />
+              <div className="flex gap-2">
+                <button onClick={disableTOTP} className="btn-accent text-sm">Confirm Disable</button>
+                <button onClick={() => { setShowTotpDisablePrompt(false); setTotpDisablePassword(''); }} className="btn-ghost text-sm">Cancel</button>
+              </div>
+            </div>
+          )}
+
           {totpSetup && (
             <div className="bg-zen-800/40 rounded-xl p-4 space-y-3">
               <p className="text-xs text-zen-400">Scan this QR code with your authenticator app:</p>
@@ -234,17 +269,33 @@ export default function SettingsPage() {
           )}
 
           {/* Email 2FA */}
-          <div className="flex items-center justify-between py-2">
-            <div>
-              <p className="text-sm text-zen-200 flex items-center gap-2"><Mail size={14} /> Email 2FA</p>
-              <p className="text-xs text-zen-500 mt-0.5">Receive a code via email on login</p>
+          <div className="py-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-zen-200 flex items-center gap-2"><Mail size={14} /> Email 2FA</p>
+                <p className="text-xs text-zen-500 mt-0.5">Receive a code via email on login</p>
+              </div>
+              <button
+                onClick={toggleEmail2FA}
+                className={`btn-ghost text-xs ${user?.email2faEnabled ? 'text-danger-400' : ''}`}
+              >
+                {user?.email2faEnabled ? 'Disable' : 'Enable'}
+              </button>
             </div>
-            <button
-              onClick={toggleEmail2FA}
-              className={`btn-ghost text-xs ${user?.email2faEnabled ? 'text-danger-400' : ''}`}
-            >
-              {user?.email2faEnabled ? 'Disable' : 'Enable'}
-            </button>
+            {showEmail2faPrompt && (
+              <div className="mt-3 flex items-center gap-2">
+                <input
+                  type="password"
+                  value={email2faPassword}
+                  onChange={(e) => setEmail2faPassword(e.target.value)}
+                  className="glass-input flex-1 text-sm"
+                  placeholder="Enter your password to confirm"
+                  autoComplete="current-password"
+                />
+                <button onClick={toggleEmail2FA} className="btn-accent text-xs">Confirm</button>
+                <button onClick={() => { setShowEmail2faPrompt(false); setEmail2faPassword(''); }} className="btn-ghost text-xs">Cancel</button>
+              </div>
+            )}
           </div>
         </div>
       </BentoCard>

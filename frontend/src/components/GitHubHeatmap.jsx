@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 
 // GitHub's exact color tokens
 const COLORS_DARK = ['#161b22', '#0e4429', '#006d32', '#26a641', '#39d353'];
@@ -16,13 +16,7 @@ function getLevel(seconds) {
   return 4;
 }
 
-function formatDate(dateStr) {
-  const d = new Date(dateStr + 'T00:00:00');
-  return d.toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
-}
-
 export default function GitHubHeatmap({ data = {}, darkMode = true }) {
-  const [tooltip, setTooltip] = useState(null);
   const colors = darkMode ? COLORS_DARK : COLORS_LIGHT;
 
   const { weeks, monthLabels } = useMemo(() => {
@@ -128,17 +122,6 @@ export default function GitHubHeatmap({ data = {}, darkMode = true }) {
                   rx={2}
                   ry={2}
                   fill={colors[day.level]}
-                  onMouseEnter={(e) => {
-                    const rect = e.target.getBoundingClientRect();
-                    setTooltip({
-                      x: rect.left + rect.width / 2,
-                      y: rect.top,
-                      date: day.date,
-                      seconds: day.seconds,
-                    });
-                  }}
-                  onMouseLeave={() => setTooltip(null)}
-                  style={{ cursor: 'default' }}
                 />
               ) : null
             )
@@ -155,24 +138,6 @@ export default function GitHubHeatmap({ data = {}, darkMode = true }) {
         <span>More</span>
       </div>
 
-      {/* Tooltip */}
-      {tooltip && (
-        <div
-          className="fixed z-50 px-2 py-1 rounded text-xs font-medium pointer-events-none"
-          style={{
-            left: tooltip.x,
-            top: tooltip.y - 36,
-            transform: 'translateX(-50%)',
-            backgroundColor: darkMode ? '#24292f' : '#24292f',
-            color: '#fff',
-            border: '1px solid #454d56',
-          }}
-        >
-          {tooltip.seconds > 0
-            ? `${Math.round(tooltip.seconds / 60)} minutes on ${formatDate(tooltip.date)}`
-            : `No activity on ${formatDate(tooltip.date)}`}
-        </div>
-      )}
     </div>
   );
 }
