@@ -2,6 +2,7 @@ const express = require('express');
 const { authenticate, requireVerified } = require('../middleware/auth');
 const { currentDayGuard, softBanCheck, lastActiveTouch } = require('../middleware/guards');
 const TrackingData = require('../models/TrackingData');
+const Notification = require('../models/Notification');
 const User = require('../models/User');
 const { syncFriendStreaks, syncGroupStreaks } = require('../utils/streaks');
 
@@ -9,6 +10,175 @@ const router = express.Router();
 
 // Apply soft-ban and last-active to all authenticated routes
 router.use(authenticate, softBanCheck, lastActiveTouch);
+
+// ─── Timer state ───
+router.get('/timer/state', async (req, res) => {
+  const u = await User.findOne({ userId: req.user.userId }).select('timerRunning timerStartedAt');
+  res.json({
+    running: !!u.timerRunning,
+    startedAt: u.timerStartedAt ? u.timerStartedAt.getTime() : null,
+    serverTime: Date.now(),
+  });
+});
+
+router.post('/timer/start', requireVerified, async (req, res) => {
+  const u = await User.findOne({ userId: req.user.userId });
+  if (u.timerRunning) return res.status(409).json({ error: 'Timer already running' });
+  const now = new Date();
+  u.timerRunning = true;
+  u.timerStartedAt = now;
+  await u.save();
+
+  // Broadcast to all user devices
+  const io = req.app.get('io');
+  if (io) {
+    io.to(`user:${req.user.userId}`).emit('TIMER_SYNC', {
+      running: true,
+      startedAt: now.getTime(),
+      serverTime: Date.now(),
+    });
+  }
+
+  res.json({ running: true, startedAt: now.getTime(), serverTime: Date.now() });
+});
+
+router.post('/timer/stop', requireVerified, currentDayGuard, async (req, res) => {
+  const u = await User.findOne({ userId: req.user.userId });
+  if (!u.timerRunning) return res.status(409).json({ error: 'Timer not running' });
+
+  const startedAt = u.timerStartedAt;
+  const now = new Date();
+  const sessionMs = now.getTime() - startedAt.getTime();
+  const sessionSeconds = Math.min(Math.max(Math.round(sessionMs / 1000), 0), 86400);
+
+  u.timerRunning = false;
+  u.timerStartedAt = null;
+  await u.save();
+
+  // Save tracking data inline
+  if (sessionSeconds >= 1) {
+    const date = now.toISOString().slice(0, 10);
+    const record = await TrackingData.findOneAndUpdate(
+      { userId: req.user.userId, date },
+      {
+        $inc: { seconds: sessionSeconds },
+        $push: {
+          sessions: {
+            start: startedAt,
+            end: now,
+            duration: sessionSeconds,
+          },
+        },
+      },
+      { upsert: true, new: true }
+    );
+
+    // Recalculate user aggregate stats
+    const allData = await TrackingData.find({ userId: req.user.userId });
+    const totalSeconds = allData.reduce((sum, d) => sum + d.seconds, 0);
+    const totalDays = allData.filter(d => d.seconds > 180).length;
+    const goalSeconds = u.dailyGoalMinutes * 60;
+
+    const dataMap = {};
+    allData.forEach(d => { dataMap[d.date] = d.seconds; });
+
+    const todayDate = new Date();
+    let currentStreak = 0;
+    for (let i = 0; i < 3650; i++) {
+      const d = new Date(todayDate);
+      d.setDate(d.getDate() - i);
+      const dateStr = d.toISOString().slice(0, 10);
+      if ((dataMap[dateStr] || 0) >= goalSeconds) currentStreak++;
+      else break;
+    }
+
+    let bestStreak = 0, run = 0;
+    const sorted = allData.map(d => d.date).sort();
+    if (sorted.length > 0) {
+      const firstDate = new Date(sorted[0] + 'T00:00:00');
+      const lastDate = new Date(sorted[sorted.length - 1] + 'T00:00:00');
+      for (let d = new Date(firstDate); d <= lastDate; d.setDate(d.getDate() + 1)) {
+        const dateStr = d.toISOString().slice(0, 10);
+        if ((dataMap[dateStr] || 0) >= goalSeconds) { run++; bestStreak = Math.max(bestStreak, run); }
+        else run = 0;
+      }
+    }
+
+    const hours = totalSeconds / 3600;
+    const levels = [0, 5, 15, 30, 60, 100, 200, 500, 1000, 2000];
+    let level = 1;
+    for (let i = levels.length - 1; i >= 0; i--) {
+      if (hours >= levels[i]) { level = i + 1; break; }
+    }
+
+    const oldLevel = u.level || 1;
+    const todayTotalSeconds = record.seconds;
+    const previousTotalSeconds = todayTotalSeconds - sessionSeconds;
+    const goalReachedNow = todayTotalSeconds >= goalSeconds && previousTotalSeconds < goalSeconds;
+
+    await User.updateOne({ userId: req.user.userId }, {
+      totalStandingSeconds: totalSeconds,
+      totalDays,
+      currentStreak,
+      bestStreak,
+      level,
+    });
+
+    const io = req.app.get('io');
+    if (io) {
+      // Emit real-time stats update to all user devices
+      io.to(`user:${req.user.userId}`).emit('STATS_UPDATE', {
+        totalStandingSeconds: totalSeconds,
+        totalDays,
+        currentStreak,
+        bestStreak,
+        level,
+        todaySeconds: todayTotalSeconds,
+      });
+
+      // Level up notification
+      if (level > oldLevel) {
+        const titles = ['', 'Beginner', 'Starter', 'Regular', 'Dedicated', 'Veteran', 'Champion', 'Legend', 'Titan'];
+        const notif = await Notification.create({
+          userId: req.user.userId,
+          type: 'level_up',
+          title: 'Level Up!',
+          message: `You reached Level ${level} — ${titles[level] || 'Master'}!`,
+          data: { level },
+        });
+        io.to(`user:${req.user.userId}`).emit('NOTIFICATION', notif.toObject());
+      }
+
+      // Daily goal reached notification
+      if (goalReachedNow) {
+        const notif = await Notification.create({
+          userId: req.user.userId,
+          type: 'daily_goal_reached',
+          title: 'Daily Goal Reached!',
+          message: `You hit your ${u.dailyGoalMinutes}-minute daily goal. Great work!`,
+          data: { minutes: u.dailyGoalMinutes },
+        });
+        io.to(`user:${req.user.userId}`).emit('NOTIFICATION', notif.toObject());
+      }
+    }
+
+    // Fire-and-forget: sync friend & group streaks
+    syncFriendStreaks(req.user.userId).catch(() => {});
+    syncGroupStreaks(req.user.userId).catch(() => {});
+  }
+
+  // Broadcast timer stop to all user devices
+  const io = req.app.get('io');
+  if (io) {
+    io.to(`user:${req.user.userId}`).emit('TIMER_SYNC', {
+      running: false,
+      startedAt: null,
+      serverTime: Date.now(),
+    });
+  }
+
+  res.json({ running: false, sessionSeconds, serverTime: Date.now() });
+});
 
 // Save tracking data
 router.post('/tracking', requireVerified, currentDayGuard, async (req, res) => {

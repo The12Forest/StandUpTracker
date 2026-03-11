@@ -14,10 +14,12 @@ const leaderboardRoutes = require('./routes/leaderboard');
 const socialRoutes = require('./routes/social');
 const groupRoutes = require('./routes/groups');
 const aiRoutes = require('./routes/ai');
+const notificationRoutes = require('./routes/notifications');
 const onboardingRoutes = require('./routes/onboarding');
 const { maintenanceGate } = require('./middleware/guards');
 const { setupSocket } = require('./socket/handler');
 const { dailyStreakCleanup } = require('./utils/streaks');
+const { runNotificationScheduler } = require('./utils/notifications');
 const { isSetupComplete, getSetting } = require('./utils/settings');
 
 const fs = require('fs');
@@ -80,9 +82,10 @@ app.use('/api/leaderboard', leaderboardRoutes);
 app.use('/api/social', socialRoutes);
 app.use('/api/groups', groupRoutes);
 app.use('/api/ai', aiRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // SPA fallback — serve index.html for all client routes
-const spaPages = ['/app', '/login', '/register', '/admin', '/leaderboard', '/settings', '/dashboard', '/friends', '/groups', '/streaks', '/setup'];
+const spaPages = ['/app', '/login', '/register', '/admin', '/leaderboard', '/settings', '/dashboard', '/friends', '/groups', '/streaks', '/setup', '/2fa-setup'];
 spaPages.forEach(route => {
   app.get(route, (req, res) => {
     if (fs.existsSync(reactDist)) {
@@ -128,6 +131,9 @@ async function start() {
 
   // Daily streak cleanup — runs every hour, checks for broken streaks
   setInterval(() => { dailyStreakCleanup().catch(() => {}); }, 60 * 60 * 1000);
+
+  // Notification scheduler — runs every hour
+  setInterval(() => { runNotificationScheduler(io).catch(() => {}); }, 60 * 60 * 1000);
 
   // Read port from DB settings, fallback to 3000
   let port = 3000;

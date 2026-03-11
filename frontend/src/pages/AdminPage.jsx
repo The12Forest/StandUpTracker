@@ -565,6 +565,7 @@ function LogsTab() {
 }
 
 const SECTION_LABELS = {
+  enforcement: { label: 'User Defaults & Enforcement', icon: Lock, description: 'Master daily goal, enforced settings, and mandatory 2FA' },
   server: { label: 'Server Configuration', icon: Server, description: 'Core server settings like protocol, port, and application name' },
   security: { label: 'Security / JWT', icon: Shield, description: 'JWT signing secret, token expiry, and session cookie settings' },
   client: { label: 'Client / Interface Settings', icon: Globe, description: 'Configure defaults for the user-facing application' },
@@ -645,6 +646,9 @@ function SettingsTab() {
     friendStreakEnabled: 'Enable friend streak tracking between connected users.',
     groupStreakEnabled: 'Enable group streak tracking for group members.',
     forceReverifyAllEnabled: 'When enabled, forces all users to re-verify their email.',
+    masterDailyGoalMinutes: 'The master daily time goal (in minutes) that applies to all users. When enforcement is off, this is the default for new users.',
+    enforceDailyGoal: 'When enabled, ALL users are locked to the master daily goal and cannot change it in their settings.',
+    enforce2fa: 'When enabled, ALL users must have two-factor authentication enabled. Users without 2FA will be forced to set it up on their next login.',
   };
 
   // Group settings by section
@@ -656,10 +660,10 @@ function SettingsTab() {
     sections[section].push({ key, ...meta });
   }
 
-  const sectionOrder = ['server', 'security', 'client', 'mail', 'auth', 'social', 'groups', 'emailAdmin', 'ai', 'logging', 'general'];
+  const sectionOrder = ['enforcement', 'server', 'security', 'client', 'mail', 'auth', 'social', 'groups', 'emailAdmin', 'ai', 'logging', 'general'];
 
   return (
-    <div className="space-y-6 max-w-3xl mx-auto">
+    <div className="space-y-6">
       {sectionOrder.map((sectionKey) => {
         const items = sections[sectionKey];
         if (!items || items.length === 0) return null;

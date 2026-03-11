@@ -1,6 +1,7 @@
 import { Outlet, Navigate } from 'react-router-dom';
 import useAuthStore from '../stores/useAuthStore';
 import Sidebar from './Sidebar';
+import NotificationBell from './NotificationBell';
 
 export default function AppLayout() {
   const user = useAuthStore((s) => s.user);
@@ -32,7 +33,11 @@ export default function AppLayout() {
             </button>
           </div>
         )}
-        <main className="flex-1 p-4 lg:p-8 max-w-7xl mx-auto w-full">
+        {/* Top bar with notification bell */}
+        <div className="flex items-center justify-end px-4 lg:px-8 pt-4 lg:pt-6">
+          <NotificationBell />
+        </div>
+        <main className="flex-1 p-4 lg:px-8 lg:pb-8 max-w-7xl mx-auto w-full">
           <Outlet />
         </main>
       </div>

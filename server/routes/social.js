@@ -6,6 +6,7 @@ const FriendStreak = require('../models/FriendStreak');
 const TrackingData = require('../models/TrackingData');
 const User = require('../models/User');
 const Settings = require('../models/Settings');
+const Notification = require('../models/Notification');
 
 const router = express.Router();
 
@@ -95,6 +96,16 @@ router.post('/request', requireVerified, async (req, res) => {
       from: { userId: req.user.userId, username: req.user.username },
       requestId: friendship._id,
     });
+
+    // Persist notification
+    const notif = await Notification.create({
+      userId: target.userId,
+      type: 'friend_request',
+      title: 'New Friend Request',
+      message: `${req.user.username} sent you a friend request.`,
+      data: { fromUserId: req.user.userId, fromUsername: req.user.username },
+    });
+    io.to(`user:${target.userId}`).emit('NOTIFICATION', notif.toObject());
 
     res.status(201).json({ message: 'Friend request sent' });
   } catch (err) {

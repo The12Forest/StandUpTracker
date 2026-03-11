@@ -1,6 +1,9 @@
 import { create } from 'zustand';
 import { io } from 'socket.io-client';
 import { getToken } from '../lib/api';
+import useTimerStore from './useTimerStore';
+import useNotificationStore from './useNotificationStore';
+import useAuthStore from './useAuthStore';
 
 const useSocketStore = create((set, get) => ({
   socket: null,
@@ -19,9 +22,48 @@ const useSocketStore = create((set, get) => ({
       transports: ['websocket', 'polling'],
     });
 
-    socket.on('connect', () => set({ connected: true }));
+    socket.on('connect', () => {
+      set({ connected: true });
+      // Re-fetch timer state on reconnect
+      useTimerStore.getState().fetchState();
+      useNotificationStore.getState().fetchUnreadCount();
+    });
     socket.on('disconnect', () => set({ connected: false }));
     socket.on('CONNECTION_COUNT', (data) => set({ connectionCount: data.count }));
+
+    // Personal timer sync (cross-device)
+    socket.on('TIMER_SYNC', (data) => {
+      useTimerStore.getState().syncFromServer(data);
+    });
+
+    // Real-time stats update (level, streak, total, todaySeconds)
+    socket.on('STATS_UPDATE', (data) => {
+      useTimerStore.getState().syncStats(data);
+      // Update auth store user object with fresh stats
+      const currentUser = useAuthStore.getState().user;
+      if (currentUser) {
+        useAuthStore.setState({
+          user: {
+            ...currentUser,
+            totalStandingSeconds: data.totalStandingSeconds ?? currentUser.totalStandingSeconds,
+            totalDays: data.totalDays ?? currentUser.totalDays,
+            currentStreak: data.currentStreak ?? currentUser.currentStreak,
+            bestStreak: data.bestStreak ?? currentUser.bestStreak,
+            level: data.level ?? currentUser.level,
+          },
+        });
+      }
+    });
+
+    // Real-time notifications
+    socket.on('NOTIFICATION', (notif) => {
+      useNotificationStore.getState().addNotification(notif);
+    });
+
+    // Notification count on connect
+    socket.on('NOTIFICATION_COUNT', (data) => {
+      useNotificationStore.getState().setUnreadCount(data.count);
+    });
 
     set({ socket });
   },

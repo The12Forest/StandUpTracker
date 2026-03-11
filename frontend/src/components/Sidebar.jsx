@@ -59,7 +59,13 @@ export default function Sidebar() {
       >
         {/* Logo */}
         <div className="p-6 border-b border-zen-700/30">
-          <div className="flex items-center gap-3">
+          <div
+            className="flex items-center gap-3 cursor-pointer"
+            onClick={() => { navigate('/app'); setOpen(false); }}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => { if (e.key === 'Enter') { navigate('/app'); setOpen(false); } }}
+          >
             <div className="w-9 h-9 rounded-xl bg-accent-500/20 flex items-center justify-center">
               <Timer size={18} className="text-accent-400" />
             </div>

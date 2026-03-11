@@ -222,6 +222,9 @@ router.post('/login', authLimiter, async (req, res) => {
     await setAuthCookie(res, token);
     logger.info(`User logged in: ${user.username}`, { source: 'auth', userId: user.userId });
 
+    const enforce2fa = await getSetting('enforce2fa');
+    const has2fa = user.totpEnabled || user.email2faEnabled;
+
     res.json({
       token,
       user: {
@@ -233,6 +236,8 @@ router.post('/login', authLimiter, async (req, res) => {
         theme: user.theme,
         totpEnabled: user.totpEnabled,
         email2faEnabled: user.email2faEnabled,
+        enforce2fa: !!enforce2fa,
+        needs2faSetup: !!enforce2fa && !has2fa,
       },
     });
   } catch (err) {
@@ -308,6 +313,10 @@ router.post('/resend-verification', authLimiter, async (req, res) => {
 // Get current user
 router.get('/me', authenticate, softBanCheck, lastActiveTouch, async (req, res) => {
   const u = req.user;
+  const enforceDailyGoal = await getSetting('enforceDailyGoal');
+  const enforce2fa = await getSetting('enforce2fa');
+  const masterGoal = enforceDailyGoal ? await getSetting('masterDailyGoalMinutes') : null;
+  const has2fa = u.totpEnabled || u.email2faEnabled;
   res.json({
     user: {
       userId: u.userId,
@@ -316,7 +325,7 @@ router.get('/me', authenticate, softBanCheck, lastActiveTouch, async (req, res) 
       role: u.role,
       emailVerified: u.emailVerified,
       theme: u.theme,
-      dailyGoalMinutes: u.dailyGoalMinutes,
+      dailyGoalMinutes: enforceDailyGoal ? (masterGoal || 60) : u.dailyGoalMinutes,
       totpEnabled: u.totpEnabled,
       email2faEnabled: u.email2faEnabled,
       totalStandingSeconds: u.totalStandingSeconds,
@@ -328,6 +337,9 @@ router.get('/me', authenticate, softBanCheck, lastActiveTouch, async (req, res) 
       pendingEmail: u.pendingEmail || null,
       geminiOptIn: u.geminiOptIn,
       impersonator: req.impersonator || null,
+      enforceDailyGoal: !!enforceDailyGoal,
+      enforce2fa: !!enforce2fa,
+      needs2faSetup: !!enforce2fa && !has2fa,
     },
   });
 });
@@ -346,6 +358,10 @@ router.put('/profile', authenticate, softBanCheck, async (req, res) => {
       req.user.theme = theme;
     }
     if (dailyGoalMinutes && dailyGoalMinutes >= 1 && dailyGoalMinutes <= 480) {
+      const enforced = await getSetting('enforceDailyGoal');
+      if (enforced) {
+        return res.status(403).json({ error: 'Daily goal is set by your administrator and cannot be changed' });
+      }
       req.user.dailyGoalMinutes = dailyGoalMinutes;
     }
     if (typeof geminiOptIn === 'boolean') {
@@ -460,6 +476,10 @@ router.post('/2fa/totp/enable', authenticate, impersonationGuard, async (req, re
 // Disable TOTP 2FA
 router.post('/2fa/totp/disable', authenticate, impersonationGuard, async (req, res) => {
   try {
+    const enforce2fa = await getSetting('enforce2fa');
+    if (enforce2fa && !req.user.email2faEnabled) {
+      return res.status(403).json({ error: '2FA is required by your administrator and cannot be disabled' });
+    }
     const { password } = req.body;
     const valid = await argon2.verify(req.user.passwordHash, password);
     if (!valid) return res.status(401).json({ error: 'Password is incorrect' });
@@ -491,6 +511,10 @@ router.post('/2fa/email/enable', authenticate, impersonationGuard, async (req, r
 // Disable Email 2FA
 router.post('/2fa/email/disable', authenticate, impersonationGuard, async (req, res) => {
   try {
+    const enforce2fa = await getSetting('enforce2fa');
+    if (enforce2fa && !req.user.totpEnabled) {
+      return res.status(403).json({ error: '2FA is required by your administrator and cannot be disabled' });
+    }
     const { password } = req.body;
     const valid = await argon2.verify(req.user.passwordHash, password);
     if (!valid) return res.status(401).json({ error: 'Password is incorrect' });

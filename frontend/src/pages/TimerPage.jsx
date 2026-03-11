@@ -6,10 +6,10 @@ import { BentoCard, BentoGrid, StatCard } from '../components/BentoCard';
 import { formatTime, formatMinutes, levelFromSeconds } from '../lib/utils';
 
 export default function TimerPage() {
-  const { running, elapsed, todayTotal, start, stop, loadToday } = useTimerStore();
+  const { running, elapsed, todayTotal, start, stop, loadToday, fetchState } = useTimerStore();
   const user = useAuthStore((s) => s.user);
 
-  useEffect(() => { loadToday(); }, [loadToday]);
+  useEffect(() => { loadToday(); fetchState(); }, [loadToday, fetchState]);
 
   const displaySeconds = running ? todayTotal + elapsed : todayTotal;
   const goalMinutes = user?.dailyGoalMinutes || 30;

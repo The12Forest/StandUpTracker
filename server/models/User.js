@@ -31,6 +31,9 @@ const userSchema = new mongoose.Schema({
   lastActiveAt: Date,
   blockedUntil: Date,
   geminiOptIn: { type: Boolean, default: false },
+  // Active timer (server-authoritative)
+  timerRunning: { type: Boolean, default: false },
+  timerStartedAt: { type: Date, default: null },
   // Stats
   totalStandingSeconds: { type: Number, default: 0 },
   totalDays: { type: Number, default: 0 },

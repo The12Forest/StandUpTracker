@@ -18,6 +18,7 @@ import SocialPage from './pages/SocialPage';
 import GroupsPage from './pages/GroupsPage';
 import StreaksPage from './pages/StreaksPage';
 import SetupPage from './pages/SetupPage';
+import TwoFactorSetupPage from './pages/TwoFactorSetupPage';
 
 function AppShell() {
   const init = useAuthStore((s) => s.init);
@@ -61,17 +62,26 @@ function AppShell() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/setup" element={<Navigate to="/app" replace />} />
-        <Route element={<AppLayout />}>
-          <Route path="/app" element={<TimerPage />} />
-          <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/leaderboard" element={<LeaderboardPage />} />
-          <Route path="/friends" element={<SocialPage />} />
-          <Route path="/groups" element={<GroupsPage />} />
-          <Route path="/streaks" element={<StreaksPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/admin" element={<AdminPage />} />
-        </Route>
-        <Route path="*" element={<Navigate to="/app" replace />} />
+        {user?.needs2faSetup ? (
+          <>
+            <Route path="/2fa-setup" element={<TwoFactorSetupPage />} />
+            <Route path="*" element={<Navigate to="/2fa-setup" replace />} />
+          </>
+        ) : (
+          <>
+            <Route element={<AppLayout />}>
+              <Route path="/app" element={<TimerPage />} />
+              <Route path="/dashboard" element={<DashboardPage />} />
+              <Route path="/leaderboard" element={<LeaderboardPage />} />
+              <Route path="/friends" element={<SocialPage />} />
+              <Route path="/groups" element={<GroupsPage />} />
+              <Route path="/streaks" element={<StreaksPage />} />
+              <Route path="/settings" element={<SettingsPage />} />
+              <Route path="/admin" element={<AdminPage />} />
+            </Route>
+            <Route path="*" element={<Navigate to="/app" replace />} />
+          </>
+        )}
       </Routes>
     </>
   );

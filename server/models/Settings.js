@@ -56,6 +56,11 @@ const DEFAULTS = {
   ollamaEndpoint: { value: 'http://localhost:11434', description: 'Ollama API endpoint URL (e.g. http://localhost:11434)', section: 'ai' },
   ollamaModel: { value: '', description: 'Active Ollama model name for AI features', section: 'ai' },
 
+  // Enforcement
+  masterDailyGoalMinutes: { value: 60, description: 'Master daily time goal for all users (minutes)', section: 'enforcement' },
+  enforceDailyGoal: { value: false, description: 'Lock the daily goal for all users to the master value', section: 'enforcement' },
+  enforce2fa: { value: false, description: 'Require all users to enable two-factor authentication', section: 'enforcement' },
+
   // Logging
   logLevel: { value: 'INFO', description: 'Minimum log level (DEBUG, INFO, WARN, ERROR)', section: 'logging' },
   logRetentionDays: { value: 90, description: 'Days to retain logs before auto-deletion', section: 'logging' },

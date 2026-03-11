@@ -107,7 +107,7 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="space-y-6">
       <h2 className="text-xl font-bold text-zen-100 flex items-center gap-2">
         <Settings size={20} className="text-accent-400" />
         Settings
@@ -175,9 +175,17 @@ export default function SettingsPage() {
           </div>
           <div>
             <label className="text-xs text-zen-500 mb-1 block">Daily Goal (minutes)</label>
-            <input type="number" min={1} max={1440} value={profile.dailyGoalMinutes}
-              onChange={(e) => setProfile({ ...profile, dailyGoalMinutes: parseInt(e.target.value) || 30 })}
-              className="glass-input w-32" />
+            {user?.enforceDailyGoal ? (
+              <div className="flex items-center gap-2">
+                <input type="number" value={profile.dailyGoalMinutes} disabled className="glass-input w-32 opacity-60" />
+                <Lock size={14} className="text-zen-500" />
+                <span className="text-[10px] text-zen-500">Set by administrator</span>
+              </div>
+            ) : (
+              <input type="number" min={1} max={1440} value={profile.dailyGoalMinutes}
+                onChange={(e) => setProfile({ ...profile, dailyGoalMinutes: parseInt(e.target.value) || 30 })}
+                className="glass-input w-32" />
+            )}
           </div>
           <div className="flex items-center justify-between py-2 border-t border-zen-700/30">
             <div>
@@ -218,6 +226,12 @@ export default function SettingsPage() {
           <Shield size={16} className="text-accent-400" />
           <span className="text-sm font-semibold text-zen-200">Two-Factor Authentication</span>
         </div>
+        {user?.enforce2fa && (
+          <div className="bg-accent-500/10 border border-accent-500/20 rounded-lg p-3 mb-4 flex items-center gap-2">
+            <Lock size={14} className="text-accent-400 shrink-0" />
+            <p className="text-xs text-accent-300">Two-factor authentication is required by your administrator. You must keep at least one 2FA method enabled.</p>
+          </div>
+        )}
         <div className="space-y-4">
           <div className="flex items-center justify-between py-2 border-b border-zen-700/30">
             <div>
@@ -225,7 +239,11 @@ export default function SettingsPage() {
               <p className="text-xs text-zen-500 mt-0.5">Use Google Authenticator or similar</p>
             </div>
             {user?.totpEnabled ? (
-              <button onClick={disableTOTP} className="btn-ghost text-xs text-danger-400">Disable</button>
+              user?.enforce2fa && !user?.email2faEnabled ? (
+                <span className="text-[10px] text-zen-500 flex items-center gap-1"><Lock size={10} /> Required</span>
+              ) : (
+                <button onClick={disableTOTP} className="btn-ghost text-xs text-danger-400">Disable</button>
+              )
             ) : (
               <button onClick={setupTOTP} className="btn-ghost text-xs">Setup</button>
             )}
@@ -275,12 +293,25 @@ export default function SettingsPage() {
                 <p className="text-sm text-zen-200 flex items-center gap-2"><Mail size={14} /> Email 2FA</p>
                 <p className="text-xs text-zen-500 mt-0.5">Receive a code via email on login</p>
               </div>
-              <button
-                onClick={toggleEmail2FA}
-                className={`btn-ghost text-xs ${user?.email2faEnabled ? 'text-danger-400' : ''}`}
-              >
-                {user?.email2faEnabled ? 'Disable' : 'Enable'}
-              </button>
+              {user?.email2faEnabled ? (
+                user?.enforce2fa && !user?.totpEnabled ? (
+                  <span className="text-[10px] text-zen-500 flex items-center gap-1"><Lock size={10} /> Required</span>
+                ) : (
+                  <button
+                    onClick={toggleEmail2FA}
+                    className="btn-ghost text-xs text-danger-400"
+                  >
+                    Disable
+                  </button>
+                )
+              ) : (
+                <button
+                  onClick={toggleEmail2FA}
+                  className="btn-ghost text-xs"
+                >
+                  Enable
+                </button>
+              )}
             </div>
             {showEmail2faPrompt && (
               <div className="mt-3 flex items-center gap-2">

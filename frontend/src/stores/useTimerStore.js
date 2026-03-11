@@ -3,10 +3,10 @@ import { api } from '../lib/api';
 import { todayKey } from '../lib/utils';
 
 const useTimerStore = create((set, get) => ({
-  // Timer state
+  // Timer state (server-authoritative)
   running: false,
-  startedAt: null,
-  elapsed: 0,       // seconds for current session
+  startedAt: null,  // server timestamp (ms) when timer started
+  elapsed: 0,       // display-only seconds for current session
   todayTotal: 0,    // seconds already tracked today
   ntpOffset: 0,     // ms offset from server clock
 
@@ -15,39 +15,44 @@ const useTimerStore = create((set, get) => ({
 
   correctedNow: () => Date.now() + get().ntpOffset,
 
-  start: () => {
+  // Start timer via server
+  start: async () => {
     const state = get();
     if (state.running) return;
-    const now = state.correctedNow();
-    set({ running: true, startedAt: now, elapsed: 0 });
-    get()._tick();
-
-    // Haptic feedback
-    if (navigator.vibrate) navigator.vibrate(30);
+    try {
+      const data = await api('/api/timer/start', { method: 'POST' });
+      // Server confirmed start — apply immediately
+      const adjustedStart = data.startedAt - state.ntpOffset;
+      set({ running: true, startedAt: adjustedStart, elapsed: 0 });
+      get()._tick();
+      if (navigator.vibrate) navigator.vibrate(30);
+    } catch (err) {
+      console.error('Timer start failed:', err);
+    }
   },
 
-  stop: () => {
+  // Stop timer via server
+  stop: async () => {
     const state = get();
     if (!state.running) return;
     cancelAnimationFrame(state._rafId);
-
-    const sessionSeconds = Math.round((state.correctedNow() - state.startedAt) / 1000);
-    const newTotal = state.todayTotal + sessionSeconds;
-
-    set({
-      running: false,
-      startedAt: null,
-      elapsed: 0,
-      todayTotal: newTotal,
-      _rafId: null,
-    });
-
-    // Haptic feedback
-    if (navigator.vibrate) navigator.vibrate([20, 50, 20]);
-
-    // Save to server
-    get()._save(sessionSeconds);
-    return sessionSeconds;
+    try {
+      const data = await api('/api/timer/stop', { method: 'POST' });
+      const sessionSeconds = data.sessionSeconds || 0;
+      set({
+        running: false,
+        startedAt: null,
+        elapsed: 0,
+        todayTotal: get().todayTotal + sessionSeconds,
+        _rafId: null,
+      });
+      if (navigator.vibrate) navigator.vibrate([20, 50, 20]);
+      return sessionSeconds;
+    } catch (err) {
+      console.error('Timer stop failed:', err);
+      // Re-fetch state in case of error
+      get().fetchState();
+    }
   },
 
   _tick: () => {
@@ -55,38 +60,26 @@ const useTimerStore = create((set, get) => ({
       const state = get();
       if (!state.running) return;
       const now = state.correctedNow();
-      const elapsed = Math.round((now - state.startedAt) / 1000);
+      const elapsed = Math.max(0, Math.round((now - state.startedAt) / 1000));
       set({ elapsed, _rafId: requestAnimationFrame(tick) });
     };
     set({ _rafId: requestAnimationFrame(tick) });
   },
 
-  _save: async (sessionSeconds) => {
-    // Skip trivial sessions and cap insane values
-    if (sessionSeconds < 1) return;
-    const cappedSession = Math.min(sessionSeconds, 86400);
-    const date = todayKey();
-    const state = get();
+  // Fetch server timer state (used on connect / reconnect)
+  fetchState: async () => {
     try {
-      await api('/api/tracking', {
-        method: 'POST',
-        body: JSON.stringify({
-          date,
-          seconds: state.todayTotal,
-          session: {
-            start: new Date(state.correctedNow() - cappedSession * 1000).toISOString(),
-            end: new Date(state.correctedNow()).toISOString(),
-            duration: cappedSession,
-          },
-        }),
-      });
-    } catch (err) {
-      console.error('Failed to save tracking:', err);
-      // Queue for offline sync
-      const queue = JSON.parse(localStorage.getItem('sut_sync_queue') || '[]');
-      queue.push({ date, seconds: state.todayTotal, timestamp: Date.now() });
-      localStorage.setItem('sut_sync_queue', JSON.stringify(queue));
-    }
+      const data = await api('/api/timer/state');
+      const state = get();
+      if (data.running && !state.running) {
+        const adjustedStart = data.startedAt - state.ntpOffset;
+        set({ running: true, startedAt: adjustedStart });
+        get()._tick();
+      } else if (!data.running && state.running) {
+        cancelAnimationFrame(state._rafId);
+        set({ running: false, startedAt: null, elapsed: 0, _rafId: null });
+      }
+    } catch { /* ignore */ }
   },
 
   loadToday: async () => {
@@ -103,17 +96,23 @@ const useTimerStore = create((set, get) => ({
 
   setNtpOffset: (offset) => set({ ntpOffset: offset }),
 
-  // Sync from server state (WebSocket)
+  // Sync from server state (WebSocket TIMER_SYNC)
   syncFromServer: (serverState) => {
     const ntpOffset = get().ntpOffset;
     if (serverState.running && !get().running) {
-      // Adjust startedAt with NTP offset for accurate local display
       const adjustedStart = serverState.startedAt ? serverState.startedAt - ntpOffset : get().correctedNow();
       set({ running: true, startedAt: adjustedStart });
       get()._tick();
     } else if (!serverState.running && get().running) {
       cancelAnimationFrame(get()._rafId);
       set({ running: false, startedAt: null, elapsed: 0, _rafId: null });
+    }
+  },
+
+  // Sync stats from STATS_UPDATE event
+  syncStats: (stats) => {
+    if (stats.todaySeconds != null) {
+      set({ todayTotal: stats.todaySeconds });
     }
   },
 }));
