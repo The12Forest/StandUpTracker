@@ -96,9 +96,18 @@ router.post('/advice', authenticate, softBanCheck, requireVerified, aiGateCheck,
     const goalMinutes = req.user.dailyGoalMinutes;
     const daysMetGoal = dailyData.filter(d => d.minutes >= goalMinutes).length;
 
-    const prompt = `You are a productivity coach for a standing desk tracker app called StandUpTracker.
-Analyze this user's data and give 2-3 brief, actionable tips.
-Be encouraging but honest. Keep response under 150 words. Use simple language.
+    // Resolve system prompt: user override > admin default > built-in
+    const userSystemPrompt = req.user.aiSystemPrompt || '';
+    const adminSystemPrompt = await Settings.get('defaultAiSystemPrompt') || '';
+    const builtInSystemPrompt = `You are a productivity coach for a standing desk tracker app called StandUpTracker. Be encouraging but honest. Keep response under 150 words. Use simple language.`;
+    const systemPrompt = userSystemPrompt || adminSystemPrompt || builtInSystemPrompt;
+
+    // Resolve max tokens: user override > admin default > 500
+    const userMaxTokens = req.user.aiMaxTokens || 0;
+    const adminMaxTokens = await Settings.get('defaultAiMaxTokens') || 500;
+    const numPredict = userMaxTokens > 0 ? Math.min(Math.max(userMaxTokens, 100), 2000) : Math.min(Math.max(adminMaxTokens, 100), 2000);
+
+    const prompt = `Analyze this user's data and give 2-3 brief, actionable tips.
 
 Context: ${context}
 Last 30 days summary:
@@ -123,8 +132,9 @@ Give personalized advice.`;
       body: JSON.stringify({
         model: ollamaModel,
         prompt,
+        system: systemPrompt,
         stream: false,
-        options: { temperature: 0.7, num_predict: 300 },
+        options: { temperature: 0.7, num_predict: numPredict },
       }),
       signal: controller.signal,
     });

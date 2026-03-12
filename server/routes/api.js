@@ -5,7 +5,7 @@ const TrackingData = require('../models/TrackingData');
 const Notification = require('../models/Notification');
 const User = require('../models/User');
 const { syncFriendStreaks, syncGroupStreaks } = require('../utils/streaks');
-const { getEffectiveGoalMinutes } = require('../utils/settings');
+const { getEffectiveGoalMinutes, getSetting } = require('../utils/settings');
 
 const router = express.Router();
 
@@ -78,7 +78,8 @@ router.post('/timer/stop', requireVerified, currentDayGuard, async (req, res) =>
     // Recalculate user aggregate stats
     const allData = await TrackingData.find({ userId: req.user.userId });
     const totalSeconds = allData.reduce((sum, d) => sum + d.seconds, 0);
-    const totalDays = allData.filter(d => d.seconds > 180).length;
+    const streakThresholdStop = await getSetting('streakThresholdMinutes') || 3;
+    const totalDays = allData.filter(d => d.seconds >= streakThresholdStop * 60).length;
     const effectiveGoal = await getEffectiveGoalMinutes(u);
     const goalSeconds = effectiveGoal * 60;
 
@@ -215,7 +216,8 @@ router.post('/tracking', requireVerified, currentDayGuard, async (req, res) => {
     // Update user aggregate stats
     const allData = await TrackingData.find({ userId: req.user.userId });
     const totalSeconds = allData.reduce((sum, d) => sum + d.seconds, 0);
-    const totalDays = allData.filter(d => d.seconds > 180).length;
+    const streakThresholdTracking = await getSetting('streakThresholdMinutes') || 3;
+    const totalDays = allData.filter(d => d.seconds >= streakThresholdTracking * 60).length;
     const effectiveGoalTracking = await getEffectiveGoalMinutes(req.user);
     const goalSeconds = effectiveGoalTracking * 60;
 
@@ -329,7 +331,8 @@ router.post('/tracking/sync', requireVerified, async (req, res) => {
     // Recalculate user aggregate stats after bulk sync
     const allData = await TrackingData.find({ userId: req.user.userId });
     const totalSeconds = allData.reduce((sum, d) => sum + d.seconds, 0);
-    const totalDays = allData.filter(d => d.seconds > 180).length;
+    const streakThresholdSync = await getSetting('streakThresholdMinutes') || 3;
+    const totalDays = allData.filter(d => d.seconds >= streakThresholdSync * 60).length;
     const effectiveGoal = await getEffectiveGoalMinutes(req.user);
     const goalSeconds = effectiveGoal * 60;
     const dataMap = {};

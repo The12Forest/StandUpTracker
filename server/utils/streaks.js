@@ -10,21 +10,62 @@ async function userMetThreshold(userId, date, thresholdMinutes) {
   return record && record.seconds >= thresholdMinutes * 60;
 }
 
+// Check if BOTH users in a pair met threshold on a given date
+async function pairMetThreshold(userA, userB, date, threshold) {
+  const [aOk, bOk] = await Promise.all([
+    userMetThreshold(userA, date, threshold),
+    userMetThreshold(userB, date, threshold),
+  ]);
+  return aOk && bOk;
+}
+
 // Canonical streak pair
 function streakPair(a, b) {
   return a < b ? { userA: a, userB: b } : { userA: b, userB: a };
 }
 
-// Get today's date string
-function todayStr() {
-  return new Date().toISOString().slice(0, 10);
+// Get date string for N days ago
+function dateStr(daysAgo = 0) {
+  const d = new Date();
+  d.setDate(d.getDate() - daysAgo);
+  return d.toISOString().slice(0, 10);
 }
 
-// Get yesterday's date string
-function yesterdayStr() {
-  const d = new Date();
-  d.setDate(d.getDate() - 1);
-  return d.toISOString().slice(0, 10);
+/**
+ * Count how many consecutive days (ending today) both users met threshold.
+ * Returns 0 if today isn't met by both.
+ */
+async function countPairStreak(userA, userB, threshold) {
+  let count = 0;
+  for (let i = 0; i < 365; i++) {
+    const date = dateStr(i);
+    if (await pairMetThreshold(userA, userB, date, threshold)) {
+      count++;
+    } else {
+      break;
+    }
+  }
+  return count;
+}
+
+/**
+ * Count how many consecutive days (ending today) ALL group members met threshold.
+ * Returns 0 if today isn't met by all.
+ */
+async function countGroupStreak(memberIds, threshold) {
+  let count = 0;
+  for (let i = 0; i < 365; i++) {
+    const date = dateStr(i);
+    const checks = await Promise.all(
+      memberIds.map(id => userMetThreshold(id, date, threshold))
+    );
+    if (checks.every(Boolean)) {
+      count++;
+    } else {
+      break;
+    }
+  }
+  return count;
 }
 
 /**
@@ -33,11 +74,11 @@ function yesterdayStr() {
  */
 async function syncFriendStreaks(userId) {
   const threshold = await Settings.get('streakThresholdMinutes') || 3;
-  const today = todayStr();
-  const yesterday = yesterdayStr();
+  const today = dateStr(0);
 
   // Did this user meet today's threshold?
   const userOk = await userMetThreshold(userId, today, threshold);
+  if (!userOk) return; // No point checking pairs if this user hasn't met threshold
 
   // Get all accepted friendships
   const friendships = await Friendship.find({
@@ -53,27 +94,18 @@ async function syncFriendStreaks(userId) {
       streak = await FriendStreak.create({ ...pair, currentStreak: 0, bestStreak: 0 });
     }
 
-    // Already synced for today
+    // Already synced for today — don't double-count
     if (streak.lastSyncDate === today) continue;
 
     const friendOk = await userMetThreshold(friendId, today, threshold);
+    if (!friendOk) continue; // Friend hasn't met threshold yet
 
-    if (userOk && friendOk) {
-      // Both met threshold today
-      // Check if streak was already going (synced yesterday)
-      if (streak.lastSyncDate === yesterday || streak.currentStreak === 0) {
-        streak.currentStreak += 1;
-        streak.bestStreak = Math.max(streak.bestStreak, streak.currentStreak);
-      } else {
-        // Gap — reset and start new streak
-        streak.currentStreak = 1;
-      }
-      streak.lastSyncDate = today;
-      await streak.save();
-    }
-    // If only one met threshold, we don't reset yet —
-    // the streak breaks only when the day is over and one didn't meet it.
-    // We handle that in the daily cleanup.
+    // Both met threshold today — recalculate streak from scratch
+    const current = await countPairStreak(pair.userA, pair.userB, threshold);
+    streak.currentStreak = current;
+    streak.bestStreak = Math.max(streak.bestStreak, current);
+    streak.lastSyncDate = today;
+    await streak.save();
   }
 }
 
@@ -82,12 +114,12 @@ async function syncFriendStreaks(userId) {
  */
 async function syncGroupStreaks(userId) {
   const threshold = await Settings.get('streakThresholdMinutes') || 3;
-  const today = todayStr();
-  const yesterday = yesterdayStr();
+  const today = dateStr(0);
 
   const groups = await Group.find({ 'members.userId': userId });
 
   for (const group of groups) {
+    // Already synced for today — don't double-count
     if (group.lastSyncDate === today) continue;
 
     // Check all members
@@ -95,37 +127,33 @@ async function syncGroupStreaks(userId) {
     const checks = await Promise.all(
       memberIds.map(id => userMetThreshold(id, today, threshold))
     );
-    const allMet = checks.every(Boolean);
+    if (!checks.every(Boolean)) continue; // Not all members met threshold yet
 
-    if (allMet) {
-      if (group.lastSyncDate === yesterday || group.currentStreak === 0) {
-        group.currentStreak += 1;
-        group.bestStreak = Math.max(group.bestStreak, group.currentStreak);
-      } else {
-        group.currentStreak = 1;
-      }
-      group.lastSyncDate = today;
-      await group.save();
-    }
+    // All met today — recalculate streak from scratch
+    const current = await countGroupStreak(memberIds, threshold);
+    group.currentStreak = current;
+    group.bestStreak = Math.max(group.bestStreak, current);
+    group.lastSyncDate = today;
+    await group.save();
   }
 }
 
 /**
  * Daily cleanup: reset streaks where the day passed without all parties meeting threshold.
- * Should be called once per day (e.g. via setInterval or a cron).
+ * Should be called periodically (e.g. hourly via setInterval).
  */
 async function dailyStreakCleanup() {
   const threshold = await Settings.get('streakThresholdMinutes') || 3;
-  const yesterday = yesterdayStr();
+  const yesterday = dateStr(1);
+  const today = dateStr(0);
 
-  // Friend streaks that weren't synced yesterday or today
+  // Friend streaks that weren't synced yesterday or today (stale)
   const staleStreaks = await FriendStreak.find({
     currentStreak: { $gt: 0 },
-    lastSyncDate: { $nin: [yesterday, todayStr()] },
+    lastSyncDate: { $nin: [yesterday, today] },
   });
 
   for (const streak of staleStreaks) {
-    // Check if both users met threshold yesterday
     const aOk = await userMetThreshold(streak.userA, yesterday, threshold);
     const bOk = await userMetThreshold(streak.userB, yesterday, threshold);
     if (!aOk || !bOk) {
@@ -137,7 +165,7 @@ async function dailyStreakCleanup() {
   // Group streaks
   const staleGroups = await Group.find({
     currentStreak: { $gt: 0 },
-    lastSyncDate: { $nin: [yesterday, todayStr()] },
+    lastSyncDate: { $nin: [yesterday, today] },
   });
 
   for (const group of staleGroups) {

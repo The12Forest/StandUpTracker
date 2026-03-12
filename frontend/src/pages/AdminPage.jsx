@@ -629,6 +629,8 @@ function SettingsTab() {
     ollamaEnabled: 'Enable or disable the AI Advisor feature for users who opt in.',
     ollamaEndpoint: 'Full URL to your Ollama instance (e.g. http://localhost:11434). Must be reachable from the server.',
     ollamaModel: 'Select which Ollama model to use for generating advice. Click "Refresh" to load available models from the endpoint.',
+    defaultAiSystemPrompt: 'Global fallback system prompt sent to Ollama when a user has not configured their own. Leave empty to use the built-in default.',
+    defaultAiMaxTokens: 'Default max response tokens (100-2000) for AI advice when a user has not set their own. Controls response length.',
     streakThresholdMinutes: 'Minimum standing minutes per day to count toward a streak.',
     maxGroupsPerUser: 'Maximum number of groups a user can create or join.',
     maxGroupMembers: 'Maximum members allowed in a single group.',
@@ -704,7 +706,14 @@ function SettingsTab() {
                   {description && <p className="text-[10px] text-zen-600 mt-0.5">{description}</p>}
                 </div>
                 {/* Ollama model: render as dropdown */}
-                {key === 'ollamaModel' ? (
+                {key === 'defaultAiSystemPrompt' ? (
+                  <textarea
+                    defaultValue={typeof value === 'string' ? value : ''}
+                    onBlur={(e) => saveSetting(key, e.target.value)}
+                    className="glass-input flex-1 text-sm min-h-[80px] resize-y"
+                    placeholder="Enter a default system prompt for the AI advisor..."
+                  />
+                ) : key === 'ollamaModel' ? (
                   <div className="flex items-center gap-2 flex-1">
                     <select
                       value={typeof value === 'string' ? value : ''}

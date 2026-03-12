@@ -56,6 +56,8 @@ const DEFAULTS = {
   ollamaEnabled: { value: false, description: 'Enable AI advisor feature globally', section: 'ai' },
   ollamaEndpoint: { value: 'http://localhost:11434', description: 'Ollama API endpoint URL (e.g. http://localhost:11434)', section: 'ai' },
   ollamaModel: { value: '', description: 'Active Ollama model name for AI features', section: 'ai' },
+  defaultAiSystemPrompt: { value: '', description: 'Default system prompt for AI advisor (used when user has not set their own)', section: 'ai' },
+  defaultAiMaxTokens: { value: 500, description: 'Default max response tokens for AI advisor (100-2000)', section: 'ai' },
 
   // Enforcement
   masterDailyGoalMinutes: { value: 60, description: 'Master daily time goal for all users (minutes)', section: 'enforcement' },

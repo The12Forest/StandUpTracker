@@ -4,7 +4,8 @@ const Friendship = require('../models/Friendship');
 const Notification = require('../models/Notification');
 const TrackingData = require('../models/TrackingData');
 const logger = require('../utils/logger');
-const { getJwtSecret, getEffectiveGoalMinutes } = require('../utils/settings');
+const { getJwtSecret, getEffectiveGoalMinutes, getSetting } = require('../utils/settings');
+const { syncFriendStreaks, syncGroupStreaks } = require('../utils/streaks');
 
 // Global counter state — Single Source of Truth
 const counterState = {
@@ -188,7 +189,8 @@ function setupSocket(io) {
           // Recalc stats
           const allData = await TrackingData.find({ userId });
           const totalSeconds = allData.reduce((sum, d) => sum + d.seconds, 0);
-          const totalDays = allData.filter(d => d.seconds > 180).length;
+          const streakThreshold = await getSetting('streakThresholdMinutes') || 3;
+          const totalDays = allData.filter(d => d.seconds >= streakThreshold * 60).length;
           const effectiveGoal = await getEffectiveGoalMinutes(u);
           const goalSeconds = effectiveGoal * 60;
           const dataMap = {};
@@ -255,6 +257,10 @@ function setupSocket(io) {
             });
             io.to(`user:${userId}`).emit('NOTIFICATION', notif.toObject());
           }
+
+          // Fire-and-forget: sync friend & group streaks
+          syncFriendStreaks(userId).catch(() => {});
+          syncGroupStreaks(userId).catch(() => {});
         }
 
         io.to(`user:${userId}`).emit('TIMER_SYNC', {

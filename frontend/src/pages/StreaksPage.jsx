@@ -32,8 +32,6 @@ export default function StreaksPage() {
 
   const activeFriendStreaks = friendStreaks.filter(s => s.currentStreak > 0);
   const activeGroupStreaks = groups.filter(g => g.currentStreak > 0);
-  const bestFriend = friendStreaks.reduce((best, s) => s.bestStreak > (best?.bestStreak || 0) ? s : best, null);
-  const bestGroup = groups.reduce((best, g) => g.bestStreak > (best?.bestStreak || 0) ? g : best, null);
 
   return (
     <div className="space-y-6 animate-fade-in">
