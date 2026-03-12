@@ -57,6 +57,7 @@ router.post('/timer/stop', requireVerified, currentDayGuard, async (req, res) =>
   await u.save();
 
   // Save tracking data inline
+  let todaySeconds = 0;
   if (sessionSeconds >= 1) {
     const date = now.toISOString().slice(0, 10);
     const record = await TrackingData.findOneAndUpdate(
@@ -152,6 +153,8 @@ router.post('/timer/stop', requireVerified, currentDayGuard, async (req, res) =>
       }
 
       // Daily goal reached notification
+    todaySeconds = record.seconds;
+
       if (goalReachedNow) {
         const notif = await Notification.create({
           userId: req.user.userId,
@@ -180,8 +183,9 @@ router.post('/timer/stop', requireVerified, currentDayGuard, async (req, res) =>
   }
 
   // Include todaySeconds so client can set the correct total directly
-  const todayRecord = await TrackingData.findOne({ userId: req.user.userId, date: new Date().toISOString().slice(0, 10) });
-  res.json({ running: false, sessionSeconds, todaySeconds: todayRecord?.seconds || 0, serverTime: Date.now() });
+  // `record` is already the updated document from findOneAndUpdate above (new: true)
+  // Use it directly to avoid a redundant DB query
+  res.json({ running: false, sessionSeconds, todaySeconds, serverTime: Date.now() });
 });
 
 // Save tracking data
@@ -191,11 +195,18 @@ router.post('/tracking', requireVerified, currentDayGuard, async (req, res) => {
     if (!date || seconds == null) {
       return res.status(400).json({ error: 'Date and seconds required' });
     }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return res.status(400).json({ error: 'Invalid date format (YYYY-MM-DD required)' });
+    }
+    const clampedSeconds = Math.min(Math.max(Math.round(Number(seconds)), 0), 86400);
+    if (isNaN(clampedSeconds)) {
+      return res.status(400).json({ error: 'seconds must be a number' });
+    }
 
     const record = await TrackingData.findOneAndUpdate(
       { userId: req.user.userId, date },
       {
-        $set: { seconds },
+        $set: { seconds: clampedSeconds },
         $push: session ? { sessions: session } : {},
       },
       { upsert: true, new: true }
@@ -264,6 +275,7 @@ router.post('/tracking', requireVerified, currentDayGuard, async (req, res) => {
 
 // Get tracking data
 router.get('/tracking', async (req, res) => {
+  router.get('/tracking', requireVerified, async (req, res) => {
   try {
     const { from, to } = req.query;
     const query = { userId: req.user.userId };
@@ -289,19 +301,70 @@ router.post('/tracking/sync', requireVerified, async (req, res) => {
       return res.status(400).json({ error: 'Data object required' });
     }
 
-    const ops = Object.entries(data).map(([date, seconds]) => ({
-      updateOne: {
-        filter: { userId: req.user.userId, date },
-        update: { $set: { seconds } },
-        upsert: true,
-      },
-    }));
+    const today = new Date().toISOString().slice(0, 10);
+    const entries = Object.entries(data);
+    if (entries.length > 365) {
+      return res.status(400).json({ error: 'Cannot sync more than 365 records at once' });
+    }
+
+    const ops = [];
+    for (const [date, seconds] of entries) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue; // skip invalid dates
+      if (date > today) continue; // skip future dates
+      const clampedSeconds = Math.min(Math.max(Math.round(Number(seconds)), 0), 86400);
+      if (!isNaN(clampedSeconds)) {
+        ops.push({
+          updateOne: {
+            filter: { userId: req.user.userId, date },
+            update: { $set: { seconds: clampedSeconds } },
+            upsert: true,
+          },
+        });
+      }
+    }
 
     if (ops.length > 0) {
       await TrackingData.bulkWrite(ops);
     }
 
-    res.json({ message: `Synced ${ops.length} records` });
+    // Recalculate user aggregate stats after bulk sync
+    const allData = await TrackingData.find({ userId: req.user.userId });
+    const totalSeconds = allData.reduce((sum, d) => sum + d.seconds, 0);
+    const totalDays = allData.filter(d => d.seconds > 180).length;
+    const effectiveGoal = await getEffectiveGoalMinutes(req.user);
+    const goalSeconds = effectiveGoal * 60;
+    const dataMap = {};
+    allData.forEach(d => { dataMap[d.date] = d.seconds; });
+
+    const todayDate = new Date();
+    let currentStreak = 0;
+    for (let i = 0; i < 3650; i++) {
+      const d = new Date(todayDate);
+      d.setDate(d.getDate() - i);
+      const ds = d.toISOString().slice(0, 10);
+      if ((dataMap[ds] || 0) >= goalSeconds) currentStreak++;
+      else break;
+    }
+    let bestStreak = 0, run = 0;
+    const sorted = allData.map(d => d.date).sort();
+    if (sorted.length > 0) {
+      const first = new Date(sorted[0] + 'T00:00:00');
+      const last = new Date(sorted[sorted.length - 1] + 'T00:00:00');
+      for (let d = new Date(first); d <= last; d.setDate(d.getDate() + 1)) {
+        const ds = d.toISOString().slice(0, 10);
+        if ((dataMap[ds] || 0) >= goalSeconds) { run++; bestStreak = Math.max(bestStreak, run); }
+        else run = 0;
+      }
+    }
+    const hours = totalSeconds / 3600;
+    const levels = [0, 5, 15, 30, 60, 100, 200, 500, 1000, 2000];
+    let level = 1;
+    for (let i = levels.length - 1; i >= 0; i--) {
+      if (hours >= levels[i]) { level = i + 1; break; }
+    }
+    await User.updateOne({ userId: req.user.userId }, { totalStandingSeconds: totalSeconds, totalDays, currentStreak, bestStreak, level });
+
+    res.json({ message: `Synced ${ops.length} records`, synced: ops.length, totalSeconds });
   } catch (err) {
     res.status(500).json({ error: 'Sync failed' });
   }

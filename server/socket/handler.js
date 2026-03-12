@@ -28,6 +28,7 @@ function setupSocket(io) {
         userId: user.userId,
         username: user.username,
         role: user.role,
+        emailVerified: !!user.emailVerified,
       };
 
       // Track impersonation on socket
@@ -140,6 +141,7 @@ function setupSocket(io) {
     // Personal timer start via socket (cross-device)
     socket.on('TIMER_START', async () => {
       try {
+        if (!socket.user.emailVerified) return;
         const u = await User.findOne({ userId });
         if (!u || u.timerRunning) return;
         const now = new Date();
@@ -159,6 +161,7 @@ function setupSocket(io) {
     // Personal timer stop via socket (cross-device)
     socket.on('TIMER_STOP', async () => {
       try {
+        if (!socket.user.emailVerified) return;
         const u = await User.findOne({ userId });
         if (!u || !u.timerRunning) return;
         const startedAt = u.timerStartedAt;

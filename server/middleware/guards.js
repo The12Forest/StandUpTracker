@@ -19,8 +19,13 @@ async function maintenanceGate(req, res, next) {
     // Allow super_admin through by verifying JWT directly (req.user not yet populated here)
     try {
       const header = req.headers.authorization;
-      const token = (header?.startsWith('Bearer ') ? header.slice(7) : null)
-        || req.cookies?.sut_session;
+      // Manual cookie parsing (cookie-parser is not installed)
+      let cookieToken = null;
+      if (req.headers.cookie) {
+        const match = req.headers.cookie.split(';').map(c => c.trim()).find(c => c.startsWith('sut_session='));
+        if (match) cookieToken = match.split('=').slice(1).join('=');
+      }
+      const token = (header?.startsWith('Bearer ') ? header.slice(7) : null) || cookieToken;
       if (token) {
         const secret = await getJwtSecret();
         const payload = jwt.verify(token, secret);

@@ -87,23 +87,20 @@ export default function SettingsPage() {
     } catch (err) { toast.error(err.message); }
   };
   const toggleEmail2FA = async () => {
-    if (user?.email2faEnabled) {
-      if (!showEmail2faPrompt) { setShowEmail2faPrompt(true); return; }
-      if (!email2faPassword) { toast.error('Password required to disable Email 2FA'); return; }
-      try {
+    if (!showEmail2faPrompt) { setShowEmail2faPrompt(true); return; }
+    if (!email2faPassword) { toast.error('Password required'); return; }
+    try {
+      if (user?.email2faEnabled) {
         await api('/api/auth/2fa/email/disable', { method: 'POST', body: JSON.stringify({ password: email2faPassword }) });
         toast.success('Email 2FA disabled');
-        setShowEmail2faPrompt(false);
-        setEmail2faPassword('');
-        refreshUser();
-      } catch (err) { toast.error(err.message); }
-    } else {
-      try {
-        await api('/api/auth/2fa/email/enable', { method: 'POST' });
+      } else {
+        await api('/api/auth/2fa/email/enable', { method: 'POST', body: JSON.stringify({ password: email2faPassword }) });
         toast.success('Email 2FA enabled');
-        refreshUser();
-      } catch (err) { toast.error(err.message); }
-    }
+      }
+      setShowEmail2faPrompt(false);
+      setEmail2faPassword('');
+      refreshUser();
+    } catch (err) { toast.error(err.message); }
   };
 
   return (
@@ -182,7 +179,7 @@ export default function SettingsPage() {
                 <span className="text-[10px] text-zen-500">Set by administrator</span>
               </div>
             ) : (
-              <input type="number" min={1} max={1440} value={profile.dailyGoalMinutes}
+              <input type="number" min={1} max={480} value={profile.dailyGoalMinutes}
                 onChange={(e) => setProfile({ ...profile, dailyGoalMinutes: parseInt(e.target.value) || 30 })}
                 className="glass-input w-32" />
             )}

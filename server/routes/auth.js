@@ -249,6 +249,8 @@ router.post('/login', authLimiter, async (req, res) => {
     logger.info(`User logged in: ${user.username}`, { source: 'auth', userId: user.userId });
 
     const enforce2fa = await getSetting('enforce2fa');
+    const enforceDailyGoal = await getSetting('enforceDailyGoal');
+    const masterGoal = enforceDailyGoal ? await getSetting('masterDailyGoalMinutes') : null;
     const has2fa = user.totpEnabled || user.email2faEnabled;
 
     res.json({
@@ -260,8 +262,18 @@ router.post('/login', authLimiter, async (req, res) => {
         role: user.role,
         emailVerified: user.emailVerified,
         theme: user.theme,
+        dailyGoalMinutes: enforceDailyGoal ? (masterGoal || 60) : (user.dailyGoalMinutes || 30),
         totpEnabled: user.totpEnabled,
         email2faEnabled: user.email2faEnabled,
+        totalStandingSeconds: user.totalStandingSeconds || 0,
+        totalDays: user.totalDays || 0,
+        currentStreak: user.currentStreak || 0,
+        bestStreak: user.bestStreak || 0,
+        level: user.level || 1,
+        createdAt: user.createdAt,
+        pendingEmail: user.pendingEmail || null,
+        geminiOptIn: user.geminiOptIn || false,
+        enforceDailyGoal: !!enforceDailyGoal,
         enforce2fa: !!enforce2fa,
         needs2faSetup: !!enforce2fa && !has2fa,
       },
@@ -394,6 +406,8 @@ router.put('/profile', authenticate, softBanCheck, async (req, res) => {
         return res.status(403).json({ error: 'Daily goal is set by your administrator and cannot be changed' });
       }
       req.user.dailyGoalMinutes = dailyGoalMinutes;
+    } else if (dailyGoalMinutes !== undefined && dailyGoalMinutes !== null) {
+      return res.status(400).json({ error: 'Daily goal must be between 1 and 480 minutes' });
     }
     if (typeof geminiOptIn === 'boolean') {
       req.user.geminiOptIn = geminiOptIn;
@@ -530,6 +544,11 @@ router.post('/2fa/totp/disable', authenticate, impersonationGuard, async (req, r
 // Enable Email 2FA
 router.post('/2fa/email/enable', authenticate, impersonationGuard, async (req, res) => {
   try {
+    const { password } = req.body;
+    if (!password) return res.status(400).json({ error: 'Password required' });
+    const valid = await argon2.verify(req.user.passwordHash, password);
+    if (!valid) return res.status(401).json({ error: 'Password is incorrect' });
+
     req.user.email2faEnabled = true;
     await req.user.save();
     logger.info(`Email 2FA enabled: ${req.user.username}`, { source: 'auth', userId: req.user.userId });

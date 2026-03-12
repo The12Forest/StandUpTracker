@@ -35,7 +35,6 @@ async function getTransporter() {
   }
 
   opts.tls = { rejectUnauthorized: false };
-
   const debugMode = await Settings.get('debugMode');
   if (debugMode) {
     opts.debug = true;

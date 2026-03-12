@@ -151,6 +151,7 @@ router.get('/stats', requireRole(...adminRoles), async (req, res) => {
 router.get('/users', requireRole(...adminRoles), async (req, res) => {
   try {
     const { page = 1, limit = 50, search } = req.query;
+    const safeLimit = Math.min(parseInt(limit) || 50, 200);
     const query = {};
     if (search) {
       const escaped = String(search).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -162,10 +163,10 @@ router.get('/users', requireRole(...adminRoles), async (req, res) => {
     const users = await User.find(query)
       .select('-passwordHash -totpSecret -totpRecoveryCodes -email2faCode -emailVerifyToken -emailVerifyExpires -email2faExpires -pendingEmailToken -pendingEmailExpires')
       .sort({ createdAt: -1 })
-      .skip((page - 1) * limit)
-      .limit(parseInt(limit));
+      .skip((parseInt(page) - 1) * safeLimit)
+      .limit(safeLimit);
     const total = await User.countDocuments(query);
-    res.json({ users, total, page: parseInt(page), pages: Math.ceil(total / limit) });
+    res.json({ users, total, page: parseInt(page), pages: Math.ceil(total / safeLimit) });
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch users' });
   }
@@ -289,6 +290,36 @@ router.post('/users/bulk', requireRole('super_admin'), async (req, res) => {
 });
 
 // ─── Impersonation ───
+// IMPORTANT: /impersonate/end MUST be registered before /impersonate/:userId so Express
+// does not capture the literal string "end" as a userId param and block with requireRole.
+router.post('/impersonate/end', authenticate, async (req, res) => {
+  try {
+    if (!req.impersonator) return res.status(400).json({ error: 'Not currently impersonating' });
+
+    // Clear impersonation on target
+    req.user.impersonatedBy = undefined;
+    await req.user.save();
+
+    await AuditLog.create({
+      actorId: req.impersonator.userId, actorRole: req.impersonator.role,
+      targetId: req.user.userId, action: 'impersonate_end',
+      details: { targetUsername: req.user.username }, ip: req.ip,
+    });
+
+    const io = req.app.get('io');
+    io.to('admins').emit('IMPERSONATE_ALERT', {
+      admin: req.impersonator.userId, target: req.user.username, action: 'end',
+    });
+
+    // Clear the shadow JWT cookie so the admin's cookie (from login) takes effect again
+    res.clearCookie('sut_session', { path: '/' });
+
+    res.json({ message: 'Impersonation ended' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to end impersonation' });
+  }
+});
+
 router.post('/impersonate/:userId', requireRole('super_admin'), async (req, res) => {
   try {
     const enabled = await Settings.get('impersonationEnabled');
@@ -341,34 +372,6 @@ router.post('/impersonate/:userId', requireRole('super_admin'), async (req, res)
     }});
   } catch (err) {
     res.status(500).json({ error: 'Impersonation failed' });
-  }
-});
-
-router.post('/impersonate/end', authenticate, async (req, res) => {
-  try {
-    if (!req.impersonator) return res.status(400).json({ error: 'Not currently impersonating' });
-
-    // Clear impersonation on target
-    req.user.impersonatedBy = undefined;
-    await req.user.save();
-
-    await AuditLog.create({
-      actorId: req.impersonator.userId, actorRole: req.impersonator.role,
-      targetId: req.user.userId, action: 'impersonate_end',
-      details: { targetUsername: req.user.username }, ip: req.ip,
-    });
-
-    const io = req.app.get('io');
-    io.to('admins').emit('IMPERSONATE_ALERT', {
-      admin: req.impersonator.userId, target: req.user.username, action: 'end',
-    });
-
-    // Clear the shadow JWT cookie so the admin's cookie (from login) takes effect again
-    res.clearCookie('sut_session', { path: '/' });
-
-    res.json({ message: 'Impersonation ended' });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to end impersonation' });
   }
 });
 

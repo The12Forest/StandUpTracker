@@ -8,7 +8,6 @@ export async function api(path, options = {}) {
   const res = await fetch(path, { ...options, headers, credentials: 'include' });
   if (res.status === 401) {
     localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem('sut_user');
     localStorage.removeItem('sut_originalToken');
     localStorage.removeItem('sut_isImpersonating');
     window.location.href = '/login';
@@ -29,5 +28,4 @@ export function getToken() {
 
 export function clearToken() {
   localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem('sut_user');
 }

@@ -632,6 +632,7 @@ function SettingsTab() {
     streakThresholdMinutes: 'Minimum standing minutes per day to count toward a streak.',
     maxGroupsPerUser: 'Maximum number of groups a user can create or join.',
     maxGroupMembers: 'Maximum members allowed in a single group.',
+      maxGroupSize: 'Maximum members allowed in a single group.',
     registrationEnabled: 'Allow new users to sign up. Disable to lock registrations.',
     emailVerificationRequired: 'Require email verification before users can log in.',
     smtpHost: 'SMTP server hostname for sending emails.',

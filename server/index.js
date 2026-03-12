@@ -26,14 +26,31 @@ const fs = require('fs');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: '*' } });
+// CORS origin is configured after DB connects (set on app for socket use)
+const io = new Server(server, {
+  cors: {
+    origin: (origin, cb) => {
+      const allowed = app.get('corsOrigin') || '*';
+      if (allowed === '*' || !origin || origin === allowed) cb(null, true);
+      else cb(new Error('Not allowed by CORS'));
+    },
+    credentials: true,
+  },
+});
 
 // Security
 app.use(helmet({
   contentSecurityPolicy: false,
   crossOriginEmbedderPolicy: false,
 }));
-app.use(cors());
+app.use(cors({
+  origin: (origin, cb) => {
+    const allowed = app.get('corsOrigin') || '*';
+    if (allowed === '*' || !origin || origin === allowed) cb(null, true);
+    else cb(new Error(`CORS policy does not allow origin: ${origin}`));
+  },
+  credentials: true,
+}));
 app.use(express.json({ limit: '1mb' }));
 
 // Determine which frontend to serve
@@ -130,6 +147,12 @@ async function start() {
   logger.info('MongoDB connected');
 
   // Daily streak cleanup — runs every hour, checks for broken streaks
+  // Set CORS origin from DB settings (appUrl)
+  try {
+    const appUrlSetting = await getSetting('appUrl');
+    if (appUrlSetting) app.set('corsOrigin', appUrlSetting);
+  } catch { /* use wildcard fallback */ }
+
   setInterval(() => { dailyStreakCleanup().catch(() => {}); }, 60 * 60 * 1000);
 
   // Notification scheduler — runs every hour

@@ -46,6 +46,7 @@ const DEFAULTS = {
   // Group Settings
   groupsEnabled: { value: true, description: 'Enable group creation and invitations', section: 'groups' },
   maxGroupSize: { value: 20, description: 'Maximum number of members per group', section: 'groups' },
+  maxGroupsPerUser: { value: 5, description: 'Maximum number of groups a user can belong to', section: 'groups' },
 
   // Email Admin
   allowForceReverify: { value: true, description: 'Allow admins to force users to re-verify their email', section: 'emailAdmin' },

@@ -37,6 +37,8 @@ const useAuthStore = create((set, get) => ({
     if (data.needsVerification) return data;
     setToken(data.token);
     set({ user: data.user });
+    // Fetch full profile so all fields (stats, goal, enforcement) are populated after login
+    await get().refreshUser();
     return data;
   },
 
@@ -95,6 +97,8 @@ const useAuthStore = create((set, get) => ({
     localStorage.setItem('sut_isImpersonating', 'true');
     setToken(data.token);
     set({ user: data.user, originalToken: currentToken, isImpersonating: true });
+    // Fetch full profile for impersonated user (response only contains basic fields)
+    await get().refreshUser();
   },
 
   endImpersonation: async () => {

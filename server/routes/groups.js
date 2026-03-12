@@ -100,6 +100,12 @@ router.post('/', requireVerified, async (req, res) => {
     const enabled = await Settings.get('groupsEnabled');
     if (enabled === false) return res.status(403).json({ error: 'Groups are disabled' });
 
+    const maxGroupsPerUser = await Settings.get('maxGroupsPerUser') || 5;
+    const existingCount = await Group.countDocuments({ 'members.userId': req.user.userId });
+    if (existingCount >= maxGroupsPerUser) {
+      return res.status(400).json({ error: `You have reached the maximum of ${maxGroupsPerUser} groups` });
+    }
+
     const { name } = req.body;
     if (!name || name.trim().length < 2 || name.trim().length > 50) {
       return res.status(400).json({ error: 'Group name must be 2-50 characters' });
@@ -172,13 +178,24 @@ router.post('/:groupId/invite', requireVerified, async (req, res) => {
 });
 
 // Accept group invitation
-router.post('/:groupId/accept', async (req, res) => {
+router.post('/:groupId/accept', requireVerified, async (req, res) => {
   try {
     const group = await Group.findOne({ groupId: req.params.groupId });
     if (!group) return res.status(404).json({ error: 'Group not found' });
 
     const invIdx = group.invites.findIndex(i => i.userId === req.user.userId);
     if (invIdx === -1) return res.status(404).json({ error: 'No pending invitation' });
+
+    const maxSize = await Settings.get('maxGroupSize') || 20;
+    if (group.members.length >= maxSize) {
+      return res.status(400).json({ error: `Group is full (max ${maxSize} members)` });
+    }
+
+    const maxGroupsPerUser = await Settings.get('maxGroupsPerUser') || 5;
+    const existingCount = await Group.countDocuments({ 'members.userId': req.user.userId });
+    if (existingCount >= maxGroupsPerUser) {
+      return res.status(400).json({ error: `You have reached the maximum of ${maxGroupsPerUser} groups` });
+    }
 
     group.invites.splice(invIdx, 1);
     group.members.push({ userId: req.user.userId, role: 'member' });
