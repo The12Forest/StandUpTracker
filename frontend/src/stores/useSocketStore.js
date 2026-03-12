@@ -65,6 +65,11 @@ const useSocketStore = create((set, get) => ({
       useNotificationStore.getState().setUnreadCount(data.count);
     });
 
+    // Admin changed enforcement settings — refresh user profile
+    socket.on('SETTINGS_CHANGED', () => {
+      useAuthStore.getState().refreshUser();
+    });
+
     set({ socket });
   },
 

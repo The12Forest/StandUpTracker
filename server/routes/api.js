@@ -5,6 +5,7 @@ const TrackingData = require('../models/TrackingData');
 const Notification = require('../models/Notification');
 const User = require('../models/User');
 const { syncFriendStreaks, syncGroupStreaks } = require('../utils/streaks');
+const { getEffectiveGoalMinutes } = require('../utils/settings');
 
 const router = express.Router();
 
@@ -77,7 +78,8 @@ router.post('/timer/stop', requireVerified, currentDayGuard, async (req, res) =>
     const allData = await TrackingData.find({ userId: req.user.userId });
     const totalSeconds = allData.reduce((sum, d) => sum + d.seconds, 0);
     const totalDays = allData.filter(d => d.seconds > 180).length;
-    const goalSeconds = u.dailyGoalMinutes * 60;
+    const effectiveGoal = await getEffectiveGoalMinutes(u);
+    const goalSeconds = effectiveGoal * 60;
 
     const dataMap = {};
     allData.forEach(d => { dataMap[d.date] = d.seconds; });
@@ -138,7 +140,7 @@ router.post('/timer/stop', requireVerified, currentDayGuard, async (req, res) =>
 
       // Level up notification
       if (level > oldLevel) {
-        const titles = ['', 'Beginner', 'Starter', 'Regular', 'Dedicated', 'Veteran', 'Champion', 'Legend', 'Titan'];
+        const titles = ['', 'Beginner', 'Starter', 'Regular', 'Dedicated', 'Veteran', 'Champion', 'Legend', 'Titan', 'Mythic', 'Eternal'];
         const notif = await Notification.create({
           userId: req.user.userId,
           type: 'level_up',
@@ -155,8 +157,8 @@ router.post('/timer/stop', requireVerified, currentDayGuard, async (req, res) =>
           userId: req.user.userId,
           type: 'daily_goal_reached',
           title: 'Daily Goal Reached!',
-          message: `You hit your ${u.dailyGoalMinutes}-minute daily goal. Great work!`,
-          data: { minutes: u.dailyGoalMinutes },
+          message: `You hit your ${effectiveGoal}-minute daily goal. Great work!`,
+          data: { minutes: effectiveGoal },
         });
         io.to(`user:${req.user.userId}`).emit('NOTIFICATION', notif.toObject());
       }
@@ -177,7 +179,9 @@ router.post('/timer/stop', requireVerified, currentDayGuard, async (req, res) =>
     });
   }
 
-  res.json({ running: false, sessionSeconds, serverTime: Date.now() });
+  // Include todaySeconds so client can set the correct total directly
+  const todayRecord = await TrackingData.findOne({ userId: req.user.userId, date: new Date().toISOString().slice(0, 10) });
+  res.json({ running: false, sessionSeconds, todaySeconds: todayRecord?.seconds || 0, serverTime: Date.now() });
 });
 
 // Save tracking data
@@ -201,7 +205,8 @@ router.post('/tracking', requireVerified, currentDayGuard, async (req, res) => {
     const allData = await TrackingData.find({ userId: req.user.userId });
     const totalSeconds = allData.reduce((sum, d) => sum + d.seconds, 0);
     const totalDays = allData.filter(d => d.seconds > 180).length;
-    const goalSeconds = req.user.dailyGoalMinutes * 60;
+    const effectiveGoalTracking = await getEffectiveGoalMinutes(req.user);
+    const goalSeconds = effectiveGoalTracking * 60;
 
     // Calculate streaks (must account for consecutive calendar days)
     const sorted = allData.map(d => d.date).sort().reverse();
@@ -305,13 +310,14 @@ router.post('/tracking/sync', requireVerified, async (req, res) => {
 // Get user stats
 router.get('/stats', async (req, res) => {
   const u = req.user;
+  const effectiveGoal = await getEffectiveGoalMinutes(u);
   res.json({
     totalStandingSeconds: u.totalStandingSeconds,
     totalDays: u.totalDays,
     currentStreak: u.currentStreak,
     bestStreak: u.bestStreak,
     level: u.level,
-    dailyGoalMinutes: u.dailyGoalMinutes,
+    dailyGoalMinutes: effectiveGoal,
   });
 });
 

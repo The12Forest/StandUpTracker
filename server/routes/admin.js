@@ -13,7 +13,7 @@ const Friendship = require('../models/Friendship');
 const Group = require('../models/Group');
 const logger = require('../utils/logger');
 const { sendVerificationEmail, resetTransporter, testSmtpConnection } = require('../utils/email');
-const { getJwtSecret, getAppConfig, invalidateCache } = require('../utils/settings');
+const { getJwtSecret, getAppConfig, invalidateCache, getEffectiveGoalMinutes } = require('../utils/settings');
 const crypto = require('crypto');
 
 const router = express.Router();
@@ -29,7 +29,8 @@ async function recalcUserStats(userId) {
   const allData = await TrackingData.find({ userId });
   const totalSeconds = allData.reduce((sum, d) => sum + d.seconds, 0);
   const totalDays = allData.filter(d => d.seconds > 180).length;
-  const goalSeconds = user.dailyGoalMinutes * 60;
+  const effectiveGoal = await getEffectiveGoalMinutes(user);
+  const goalSeconds = effectiveGoal * 60;
   const dataMap = {};
   allData.forEach(d => { dataMap[d.date] = d.seconds; });
   const sorted = allData.map(d => d.date).sort().reverse();
@@ -484,6 +485,16 @@ router.put('/settings', requireRole('super_admin'), async (req, res) => {
       action: 'setting_change',
       details: { updates }, ip: req.ip,
     });
+
+    // If enforcement settings changed, notify all connected users to refresh
+    const enforcementKeys = ['enforceDailyGoal', 'masterDailyGoalMinutes', 'enforce2fa'];
+    const hasEnforcementChange = Object.keys(updates).some(k => enforcementKeys.includes(k));
+    if (hasEnforcementChange) {
+      const io = req.app.get('io');
+      if (io) {
+        io.to('authenticated').emit('SETTINGS_CHANGED', { keys: Object.keys(updates) });
+      }
+    }
 
     logger.info('Settings updated by admin', { source: 'admin', userId: req.user.userId });
     res.json({ message: 'Settings updated' });

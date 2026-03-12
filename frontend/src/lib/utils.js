@@ -21,14 +21,17 @@ export function daysAgo(n) {
 
 export function levelFromSeconds(totalSeconds) {
   const hours = totalSeconds / 3600;
-  if (hours < 1) return { level: 1, title: 'Beginner', next: 1 * 3600, progress: hours };
-  if (hours < 5) return { level: 2, title: 'Starter', next: 5 * 3600, progress: hours / 5 };
-  if (hours < 20) return { level: 3, title: 'Regular', next: 20 * 3600, progress: hours / 20 };
-  if (hours < 50) return { level: 4, title: 'Dedicated', next: 50 * 3600, progress: hours / 50 };
-  if (hours < 100) return { level: 5, title: 'Veteran', next: 100 * 3600, progress: hours / 100 };
-  if (hours < 250) return { level: 6, title: 'Champion', next: 250 * 3600, progress: hours / 250 };
-  if (hours < 500) return { level: 7, title: 'Legend', next: 500 * 3600, progress: hours / 500 };
-  return { level: 8, title: 'Titan', next: Infinity, progress: 1 };
+  const thresholds = [0, 5, 15, 30, 60, 100, 200, 500, 1000, 2000];
+  const titles = ['Beginner', 'Starter', 'Regular', 'Dedicated', 'Veteran', 'Champion', 'Legend', 'Titan', 'Mythic', 'Eternal'];
+  let level = 1;
+  for (let i = thresholds.length - 1; i >= 0; i--) {
+    if (hours >= thresholds[i]) { level = i + 1; break; }
+  }
+  const title = titles[level - 1] || 'Master';
+  const currentThreshold = thresholds[level - 1] || 0;
+  const nextThreshold = thresholds[level] || Infinity;
+  const progress = nextThreshold === Infinity ? 1 : (hours - currentThreshold) / (nextThreshold - currentThreshold);
+  return { level, title, next: nextThreshold * 3600, progress: Math.min(1, Math.max(0, progress)) };
 }
 
 export function predictDailyGoal(history, goalMinutes = 30) {

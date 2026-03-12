@@ -2,6 +2,7 @@ const Notification = require('../models/Notification');
 const User = require('../models/User');
 const TrackingData = require('../models/TrackingData');
 const logger = require('./logger');
+const { getEffectiveGoalMinutes } = require('./settings');
 
 /**
  * Runs periodically (e.g. every hour) to create scheduled notifications:
@@ -17,7 +18,8 @@ async function runNotificationScheduler(io) {
     const users = await User.find({ active: true }).select('userId dailyGoalMinutes currentStreak');
 
     for (const user of users) {
-      const goalSeconds = user.dailyGoalMinutes * 60;
+      const effectiveGoal = await getEffectiveGoalMinutes(user);
+      const goalSeconds = effectiveGoal * 60;
       const tracking = await TrackingData.findOne({ userId: user.userId, date: todayStr });
       const todaySeconds = tracking?.seconds || 0;
 

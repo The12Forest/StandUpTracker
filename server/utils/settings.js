@@ -82,6 +82,15 @@ async function isSetupComplete() {
   }
 }
 
+async function getEffectiveGoalMinutes(user) {
+  const enforced = await getSetting('enforceDailyGoal');
+  if (enforced) {
+    const masterGoal = await getSetting('masterDailyGoalMinutes');
+    return masterGoal || 60;
+  }
+  return user.dailyGoalMinutes;
+}
+
 module.exports = {
   getSetting,
   getJwtSecret,
@@ -90,4 +99,5 @@ module.exports = {
   getAppConfig,
   isSetupComplete,
   invalidateCache,
+  getEffectiveGoalMinutes,
 };

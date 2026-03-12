@@ -4,7 +4,7 @@ const Friendship = require('../models/Friendship');
 const Notification = require('../models/Notification');
 const TrackingData = require('../models/TrackingData');
 const logger = require('../utils/logger');
-const { getJwtSecret } = require('../utils/settings');
+const { getJwtSecret, getEffectiveGoalMinutes } = require('../utils/settings');
 
 // Global counter state — Single Source of Truth
 const counterState = {
@@ -186,7 +186,8 @@ function setupSocket(io) {
           const allData = await TrackingData.find({ userId });
           const totalSeconds = allData.reduce((sum, d) => sum + d.seconds, 0);
           const totalDays = allData.filter(d => d.seconds > 180).length;
-          const goalSeconds = u.dailyGoalMinutes * 60;
+          const effectiveGoal = await getEffectiveGoalMinutes(u);
+          const goalSeconds = effectiveGoal * 60;
           const dataMap = {};
           allData.forEach(d => { dataMap[d.date] = d.seconds; });
 
@@ -233,7 +234,7 @@ function setupSocket(io) {
 
           // Level up notification
           if (level > oldLevel) {
-            const titles = ['', 'Beginner', 'Starter', 'Regular', 'Dedicated', 'Veteran', 'Champion', 'Legend', 'Titan'];
+            const titles = ['', 'Beginner', 'Starter', 'Regular', 'Dedicated', 'Veteran', 'Champion', 'Legend', 'Titan', 'Mythic', 'Eternal'];
             const notif = await Notification.create({
               userId, type: 'level_up', title: 'Level Up!',
               message: `You reached Level ${level} — ${titles[level] || 'Master'}!`,
@@ -246,8 +247,8 @@ function setupSocket(io) {
           if (goalReachedNow) {
             const notif = await Notification.create({
               userId, type: 'daily_goal_reached', title: 'Daily Goal Reached!',
-              message: `You hit your ${u.dailyGoalMinutes}-minute daily goal. Great work!`,
-              data: { minutes: u.dailyGoalMinutes },
+              message: `You hit your ${effectiveGoal}-minute daily goal. Great work!`,
+              data: { minutes: effectiveGoal },
             });
             io.to(`user:${userId}`).emit('NOTIFICATION', notif.toObject());
           }

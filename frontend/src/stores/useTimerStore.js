@@ -39,11 +39,12 @@ const useTimerStore = create((set, get) => ({
     try {
       const data = await api('/api/timer/stop', { method: 'POST' });
       const sessionSeconds = data.sessionSeconds || 0;
+      // Use server-provided todaySeconds directly to avoid race with STATS_UPDATE socket event
       set({
         running: false,
         startedAt: null,
         elapsed: 0,
-        todayTotal: get().todayTotal + sessionSeconds,
+        todayTotal: data.todaySeconds != null ? data.todaySeconds : (get().todayTotal + sessionSeconds),
         _rafId: null,
       });
       if (navigator.vibrate) navigator.vibrate([20, 50, 20]);
