@@ -3,6 +3,7 @@ const { authenticate, requireVerified } = require('../middleware/auth');
 const { softBanCheck, lastActiveTouch } = require('../middleware/guards');
 const Group = require('../models/Group');
 const User = require('../models/User');
+const Notification = require('../models/Notification');
 const TrackingData = require('../models/TrackingData');
 const Settings = require('../models/Settings');
 
@@ -145,8 +146,19 @@ router.post('/:groupId/invite', requireVerified, async (req, res) => {
     group.invites.push({ userId: target.userId, invitedBy: req.user.userId });
     await group.save();
 
-    // Notify via socket
+    // Create persistent notification so offline users don't miss the invite
+    const notif = await Notification.create({
+      userId: target.userId,
+      type: 'group_invite',
+      title: 'Group Invitation',
+      message: `${req.user.username} invited you to join "${group.name}".`,
+      data: { groupId: group.groupId, groupName: group.name, invitedBy: req.user.username },
+    });
+
     const io = req.app.get('io');
+    // Emit persistent notification to notification bell
+    io.to(`user:${target.userId}`).emit('NOTIFICATION', notif.toObject());
+    // Also emit GROUP_INVITE for real-time invite list refresh
     io.to(`user:${target.userId}`).emit('GROUP_INVITE', {
       groupId: group.groupId,
       groupName: group.name,

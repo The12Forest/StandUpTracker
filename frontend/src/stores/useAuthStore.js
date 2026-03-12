@@ -36,7 +36,6 @@ const useAuthStore = create((set, get) => ({
     if (data.requires2fa) return data;
     if (data.needsVerification) return data;
     setToken(data.token);
-    localStorage.setItem('sut_user', JSON.stringify(data.user));
     set({ user: data.user });
     return data;
   },
@@ -51,8 +50,9 @@ const useAuthStore = create((set, get) => ({
     });
     if (data.needsVerification) return data;
     setToken(data.token);
-    localStorage.setItem('sut_user', JSON.stringify(data.user));
     set({ user: data.user });
+    // Fetch the full profile to ensure all fields are present (e.g. enforcement settings)
+    await get().refreshUser();
     return data;
   },
 

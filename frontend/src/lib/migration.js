@@ -1,9 +1,8 @@
 // Smart Migration: scavenge legacy localStorage/cookie data
+// NOTE: sut_token and sut_user are active session keys — never treat them as legacy
 const LEGACY_KEYS = [
   'sut_tracking',
   'standuptracker_features',
-  'sut_token',
-  'sut_user',
   'standupData',
   'timerData',
 ];
@@ -29,10 +28,11 @@ export function scavengeLegacyData() {
     }
   }
 
-  // 2. Scan for any keys with standup/tracker patterns
+  // 2. Scan for any keys with standup/tracker patterns (exclude active session keys)
+  const ACTIVE_KEYS = new Set(['sut_token', 'sut_user', 'sut_originalToken', 'sut_isImpersonating']);
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i);
-    if (/standup|tracker|sut_/i.test(key) && !result[key]) {
+    if (/standup|tracker|sut_/i.test(key) && !result[key] && !ACTIVE_KEYS.has(key)) {
       try {
         result[key] = JSON.parse(localStorage.getItem(key));
       } catch {

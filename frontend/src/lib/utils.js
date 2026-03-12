@@ -38,7 +38,8 @@ export function predictDailyGoal(history, goalMinutes = 30) {
   if (!history || history.length < 3) return null;
   const recent = history.slice(-14);
   const avg = recent.reduce((s, d) => s + d.seconds, 0) / recent.length;
-  const trend = recent.length >= 7
+  // Trend requires 14 days to compare the first 7 vs last 7; with fewer days slices overlap
+  const trend = recent.length >= 14
     ? (recent.slice(-7).reduce((s, d) => s + d.seconds, 0) / 7) -
       (recent.slice(0, 7).reduce((s, d) => s + d.seconds, 0) / 7)
     : 0;

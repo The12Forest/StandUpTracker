@@ -3,28 +3,27 @@ import { Flame, Users, User, Check, Clock, Trophy, TrendingUp } from 'lucide-rea
 import { api } from '../lib/api';
 import { BentoCard, BentoGrid } from '../components/BentoCard';
 import useAuthStore from '../stores/useAuthStore';
+import useTimerStore from '../stores/useTimerStore';
 
 export default function StreaksPage() {
   const [friendStreaks, setFriendStreaks] = useState([]);
   const [groups, setGroups] = useState([]);
   const [thresholdMinutes, setThresholdMinutes] = useState(null);
-  const [todayMinutes, setTodayMinutes] = useState(0);
   const [loading, setLoading] = useState(true);
   const user = useAuthStore((s) => s.user);
+  // Live today total: persisted seconds + current session elapsed (if timer is running)
+  const todayTotal = useTimerStore((s) => s.todayTotal);
+  const elapsed = useTimerStore((s) => s.elapsed);
+  const todayMinutes = Math.round((todayTotal + elapsed) / 60);
 
   useEffect(() => {
-    const today = new Date().toISOString().slice(0, 10);
     Promise.all([
       api('/api/social/streaks').catch(() => ({ streaks: [] })),
       api('/api/groups').catch(() => ({ groups: [] })),
-      api(`/api/tracking?from=${today}&to=${today}`).catch(() => ({})),
-    ]).then(([fs, gs, tracking]) => {
+    ]).then(([fs, gs]) => {
       setFriendStreaks(fs.streaks || []);
       setThresholdMinutes(fs.thresholdMinutes || null);
       setGroups(gs.groups || []);
-      const todayEntry = tracking[today];
-      const secs = typeof todayEntry === 'object' ? (todayEntry?.seconds || 0) : (todayEntry || 0);
-      setTodayMinutes(Math.round(secs / 60));
       setLoading(false);
     });
   }, []);

@@ -110,6 +110,10 @@ router.post('/register', authLimiter, async (req, res) => {
     await setAuthCookie(res, token);
     logger.info(`User registered (super_admin): ${username}`, { source: 'auth', userId: user.userId });
 
+    const enforceDailyGoal = await getSetting('enforceDailyGoal');
+    const enforce2fa = await getSetting('enforce2fa');
+    const masterGoal = enforceDailyGoal ? await getSetting('masterDailyGoalMinutes') : null;
+
     res.status(201).json({
       token,
       user: {
@@ -119,6 +123,19 @@ router.post('/register', authLimiter, async (req, res) => {
         role: user.role,
         emailVerified: user.emailVerified,
         theme: user.theme,
+        dailyGoalMinutes: enforceDailyGoal ? (masterGoal || 60) : (user.dailyGoalMinutes || 30),
+        totpEnabled: user.totpEnabled || false,
+        email2faEnabled: user.email2faEnabled || false,
+        totalStandingSeconds: user.totalStandingSeconds || 0,
+        totalDays: user.totalDays || 0,
+        currentStreak: user.currentStreak || 0,
+        bestStreak: user.bestStreak || 0,
+        level: user.level || 1,
+        createdAt: user.createdAt,
+        geminiOptIn: user.geminiOptIn || false,
+        enforceDailyGoal: !!enforceDailyGoal,
+        enforce2fa: !!enforce2fa,
+        needs2faSetup: !!enforce2fa && !(user.totpEnabled || user.email2faEnabled),
       },
     });
   } catch (err) {
@@ -145,6 +162,15 @@ router.post('/login', authLimiter, async (req, res) => {
     if (!user.active) {
       logger.warn(`Login failed: account deactivated`, { source: 'auth', meta: { login, userId: user.userId } });
       return res.status(403).json({ error: 'Your account has been deactivated. Contact an administrator.' });
+    }
+
+    // Check for temporary ban (blockedUntil set with account still active)
+    if (user.blockedUntil && new Date(user.blockedUntil) > new Date()) {
+      logger.warn(`Login failed: account temporarily suspended`, { source: 'auth', meta: { login, userId: user.userId } });
+      return res.status(403).json({
+        error: 'Account temporarily suspended',
+        until: user.blockedUntil,
+      });
     }
 
     const valid = await argon2.verify(user.passwordHash, password);
@@ -303,7 +329,12 @@ router.post('/resend-verification', authLimiter, async (req, res) => {
     user.emailVerifyToken = token;
     user.emailVerifyExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
     await user.save();
-    await sendVerificationEmail(user.email, token);
+    // Fire-and-forget: token is already saved; don't block the response on email delivery
+    sendVerificationEmail(user.email, token).catch(err => {
+      logger.error('Failed to resend verification email', {
+        source: 'auth', meta: { email: user.email, error: err.message },
+      });
+    });
     res.json({ message: 'If that email exists and is unverified, a verification email has been sent.' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to send verification email' });

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Users, UserPlus, UserCheck, UserX, Flame, Calendar, Clock, X, Search, Trash2 } from 'lucide-react';
 import { api } from '../lib/api';
 import { BentoCard } from '../components/BentoCard';
@@ -24,6 +24,8 @@ export default function SocialPage() {
   const [sending, setSending] = useState(false);
   const toast = useToastStore();
   const socket = useSocketStore((s) => s.socket);
+  // Ref to track which friend streaks have already been fetched (avoids stale closure)
+  const streaksFetchedRef = useRef(new Set());
 
   const loadFriends = useCallback(async () => {
     try {
@@ -51,20 +53,31 @@ export default function SocialPage() {
     loadRequests();
   }, [loadFriends, loadRequests]);
 
-  // Socket events for online status
+  // Socket events for online status and friend list updates
   useEffect(() => {
     if (!socket) return;
     const onOnline = (data) => setOnlineSet((prev) => new Set([...prev, data.userId]));
     const onOffline = (data) => setOnlineSet((prev) => { const n = new Set(prev); n.delete(data.userId); return n; });
+    // When a friend request we sent is accepted, refresh the friends list
+    const onFriendAccepted = () => {
+      loadFriends();
+      loadRequests();
+    };
     socket.on('FRIEND_ONLINE', onOnline);
     socket.on('FRIEND_OFFLINE', onOffline);
-    return () => { socket.off('FRIEND_ONLINE', onOnline); socket.off('FRIEND_OFFLINE', onOffline); };
-  }, [socket]);
+    socket.on('FRIEND_ACCEPTED', onFriendAccepted);
+    return () => {
+      socket.off('FRIEND_ONLINE', onOnline);
+      socket.off('FRIEND_OFFLINE', onOffline);
+      socket.off('FRIEND_ACCEPTED', onFriendAccepted);
+    };
+  }, [socket, loadFriends, loadRequests]);
 
-  // Load shared streaks for each friend
+  // Load shared streaks for each friend — use ref to avoid stale closure
   useEffect(() => {
     friends.forEach(async (f) => {
-      if (streaks[f.userId]) return;
+      if (streaksFetchedRef.current.has(f.userId)) return;
+      streaksFetchedRef.current.add(f.userId);
       try {
         const data = await api(`/api/social/streak/${f.userId}`);
         setStreaks((prev) => ({ ...prev, [f.userId]: data }));

@@ -170,8 +170,29 @@ router.post('/accept/:requestId', async (req, res) => {
     const pair = streakPair(friendship.requester, friendship.recipient);
     await FriendStreak.findOneAndUpdate(pair, { $setOnInsert: pair }, { upsert: true });
 
-    // Notify requester via socket
     const io = req.app.get('io');
+
+    // Mutually join friend socket rooms so FRIEND_ONLINE/OFFLINE events work immediately
+    io.in(`user:${req.user.userId}`).socketsJoin(`friends:${friendship.requester}`);
+    io.in(`user:${friendship.requester}`).socketsJoin(`friends:${req.user.userId}`);
+
+    // Notify requester: they're now online to each other
+    io.to(`user:${friendship.requester}`).emit('FRIEND_ONLINE', {
+      userId: req.user.userId,
+      username: req.user.username,
+    });
+
+    // Create persistent notification so offline requesters don't miss the acceptance
+    const notif = await Notification.create({
+      userId: friendship.requester,
+      type: 'friend_request_accepted',
+      title: 'Friend Request Accepted',
+      message: `${req.user.username} accepted your friend request.`,
+      data: { fromUserId: req.user.userId, fromUsername: req.user.username },
+    });
+    io.to(`user:${friendship.requester}`).emit('NOTIFICATION', notif.toObject());
+
+    // Emit FRIEND_ACCEPTED for real-time friends list refresh on the requester side
     io.to(`user:${friendship.requester}`).emit('FRIEND_ACCEPTED', {
       friendId: req.user.userId,
       username: req.user.username,

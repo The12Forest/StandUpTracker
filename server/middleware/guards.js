@@ -1,4 +1,6 @@
 const Settings = require('../models/Settings');
+const jwt = require('jsonwebtoken');
+const { getJwtSecret } = require('../utils/settings');
 
 // Cache maintenance mode to avoid DB spam
 let maintenanceCache = { value: false, fetchedAt: 0 };
@@ -14,8 +16,17 @@ async function maintenanceGate(req, res, next) {
     maintenanceCache.fetchedAt = now;
   }
   if (maintenanceCache.value) {
-    // Allow super_admin through
-    if (req.user && req.user.role === 'super_admin') return next();
+    // Allow super_admin through by verifying JWT directly (req.user not yet populated here)
+    try {
+      const header = req.headers.authorization;
+      const token = (header?.startsWith('Bearer ') ? header.slice(7) : null)
+        || req.cookies?.sut_session;
+      if (token) {
+        const secret = await getJwtSecret();
+        const payload = jwt.verify(token, secret);
+        if (payload.role === 'super_admin') return next();
+      }
+    } catch { /* invalid token — fall through to 503 */ }
     return res.status(503).json({ error: 'System under maintenance' });
   }
   next();

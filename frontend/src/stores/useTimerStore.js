@@ -35,7 +35,9 @@ const useTimerStore = create((set, get) => ({
   stop: async () => {
     const state = get();
     if (!state.running) return;
+    // Optimistically mark stopped to prevent double-stop race condition
     cancelAnimationFrame(state._rafId);
+    set({ running: false, _rafId: null });
     try {
       const data = await api('/api/timer/stop', { method: 'POST' });
       const sessionSeconds = data.sessionSeconds || 0;

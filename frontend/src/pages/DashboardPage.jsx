@@ -176,21 +176,23 @@ export default function DashboardPage() {
         <GitHubHeatmap data={tracking} darkMode={true} />
       </BentoCard>
 
-      {/* Stats summary */}
-      {stats && (
+      {/* Stats summary — prefer live user data from auth store (updated by STATS_UPDATE socket) */}
+      {(stats || user) && (
         <BentoGrid>
           <BentoCard>
             <p className="text-xs text-zen-500">Total Tracked</p>
-            <p className="text-2xl font-bold text-zen-100 mt-1">{formatMinutes(stats.totalStandingSeconds || 0)} min</p>
+            <p className="text-2xl font-bold text-zen-100 mt-1">{formatMinutes(user?.totalStandingSeconds ?? stats?.totalStandingSeconds ?? 0)} min</p>
           </BentoCard>
           <BentoCard>
             <p className="text-xs text-zen-500">Active Days</p>
-            <p className="text-2xl font-bold text-zen-100 mt-1">{stats.totalDays || 0}</p>
+            <p className="text-2xl font-bold text-zen-100 mt-1">{user?.totalDays ?? stats?.totalDays ?? 0}</p>
           </BentoCard>
           <BentoCard>
             <p className="text-xs text-zen-500">Avg / Active Day</p>
             <p className="text-2xl font-bold text-zen-100 mt-1">
-              {stats.totalDays ? formatMinutes(Math.round((stats.totalStandingSeconds || 0) / stats.totalDays)) : 0} min
+              {(user?.totalDays ?? stats?.totalDays)
+                ? formatMinutes(Math.round((user?.totalStandingSeconds ?? stats?.totalStandingSeconds ?? 0) / (user?.totalDays ?? stats?.totalDays)))
+                : 0} min
             </p>
           </BentoCard>
         </BentoGrid>

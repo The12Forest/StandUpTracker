@@ -188,6 +188,11 @@ router.put('/users/:userId', requireRole('super_admin'), async (req, res) => {
     }
     if (typeof active === 'boolean') {
       user.active = active;
+      if (!active) {
+        // Force-disconnect existing socket sessions immediately
+        const io = req.app.get('io');
+        if (io) io.in(`user:${user.userId}`).disconnectSockets(true);
+      }
     }
     if (blockedUntil !== undefined) {
       user.blockedUntil = blockedUntil ? new Date(blockedUntil) : null;
@@ -228,6 +233,11 @@ router.post('/users/bulk', requireRole('super_admin'), async (req, res) => {
       case 'deactivate':
         await User.updateMany({ userId: { $in: safeIds } }, { active: false });
         affected = safeIds.length;
+        // Force-disconnect all deactivated users' sockets
+        {
+          const io = req.app.get('io');
+          if (io) for (const uid of safeIds) io.in(`user:${uid}`).disconnectSockets(true);
+        }
         break;
       case 'activate':
         await User.updateMany({ userId: { $in: safeIds } }, { active: true });
@@ -252,6 +262,9 @@ router.post('/users/bulk', requireRole('super_admin'), async (req, res) => {
             if (params.confirmHardDelete) {
               await TrackingData.deleteMany({ userId: uid });
             }
+            // Force-disconnect the deleted user's sockets
+            const io = req.app.get('io');
+            if (io) io.in(`user:${uid}`).disconnectSockets(true);
             affected++;
           }
         }
@@ -734,6 +747,10 @@ router.delete('/users/:userId', requireRole('super_admin'), async (req, res) => 
 
     const { hardDelete } = req.body || {};
 
+    // Force-disconnect the user's active socket sessions before deletion
+    const io = req.app.get('io');
+    if (io) io.in(`user:${user.userId}`).disconnectSockets(true);
+
     if (hardDelete) {
       await TrackingData.deleteMany({ userId: user.userId });
       await user.deleteOne();
@@ -768,6 +785,9 @@ router.put('/users/:userId/block', requireRole('super_admin'), async (req, res) 
     if (blocked) {
       user.active = false;
       if (until) user.blockedUntil = new Date(until);
+      // Force-disconnect the blocked user's active socket sessions
+      const io = req.app.get('io');
+      if (io) io.in(`user:${user.userId}`).disconnectSockets(true);
     } else {
       user.active = true;
       user.blockedUntil = null;

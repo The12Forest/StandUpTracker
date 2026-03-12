@@ -3,6 +3,7 @@ import { Users, UserPlus, Crown, LogOut, Trash2, Plus, Check, X, Flame, Clock, S
 import { api } from '../lib/api';
 import { BentoCard } from '../components/BentoCard';
 import useToastStore from '../stores/useToastStore';
+import useSocketStore from '../stores/useSocketStore';
 
 const TABS = [
   { key: 'groups', label: 'My Groups', icon: Users },
@@ -20,6 +21,7 @@ export default function GroupsPage() {
   const [inviteUser, setInviteUser] = useState('');
   const [creating, setCreating] = useState(false);
   const toast = useToastStore();
+  const socket = useSocketStore((s) => s.socket);
 
   const loadGroups = useCallback(async () => {
     try {
@@ -40,14 +42,28 @@ export default function GroupsPage() {
     loadInvites();
   }, [loadGroups, loadInvites]);
 
+  // Listen for real-time group invite events to refresh the invites list
+  useEffect(() => {
+    if (!socket) return;
+    const onGroupInvite = () => loadInvites();
+    socket.on('GROUP_INVITE', onGroupInvite);
+    return () => socket.off('GROUP_INVITE', onGroupInvite);
+  }, [socket, loadInvites]);
+
   const loadDetail = async (groupId) => {
     if (expanded === groupId) {
       setExpanded(null);
       setDetail(null);
+      setInviteUser('');
       return;
     }
+    // Clear previous state immediately to avoid showing stale data for the new group
+    setExpanded(null);
+    setDetail(null);
+    setInviteUser('');
     try {
       const data = await api(`/api/groups/${groupId}`);
+      // Only apply if this group is still the intended target (prevents race on rapid clicks)
       setDetail(data);
       setExpanded(groupId);
     } catch (err) { toast.error(err.message); }

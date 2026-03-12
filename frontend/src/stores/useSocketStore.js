@@ -13,6 +13,8 @@ const useSocketStore = create((set, get) => ({
   connect: () => {
     const existing = get().socket;
     if (existing?.connected) return;
+    // Clean up any stale disconnected socket before creating a new one
+    if (existing) existing.disconnect();
 
     const token = getToken();
     if (!token) return;
@@ -24,8 +26,9 @@ const useSocketStore = create((set, get) => ({
 
     socket.on('connect', () => {
       set({ connected: true });
-      // Re-fetch timer state on reconnect
+      // Re-fetch timer state and today's total on connect/reconnect
       useTimerStore.getState().fetchState();
+      useTimerStore.getState().loadToday();
       useNotificationStore.getState().fetchUnreadCount();
     });
     socket.on('disconnect', () => set({ connected: false }));

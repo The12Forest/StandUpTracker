@@ -37,7 +37,7 @@ export default function AppLayout() {
         <div className="flex items-center justify-end px-4 lg:px-8 pt-4 lg:pt-6">
           <NotificationBell />
         </div>
-        <main className="flex-1 p-4 lg:px-8 lg:pb-8 max-w-7xl mx-auto w-full">
+        <main className="flex-1 p-4 lg:px-8 lg:pb-8 w-full">
           <Outlet />
         </main>
       </div>
