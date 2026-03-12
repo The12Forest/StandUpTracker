@@ -274,8 +274,7 @@ router.post('/tracking', requireVerified, currentDayGuard, async (req, res) => {
 });
 
 // Get tracking data
-router.get('/tracking', async (req, res) => {
-  router.get('/tracking', requireVerified, async (req, res) => {
+router.get('/tracking', requireVerified, async (req, res) => {
   try {
     const { from, to } = req.query;
     const query = { userId: req.user.userId };
