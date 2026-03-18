@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { BarChart3, Calendar, TrendingUp, Brain, Sparkles, ChevronDown, ChevronUp, Save, Zap } from 'lucide-react';
+import { BarChart3, Calendar, TrendingUp, Brain, Sparkles } from 'lucide-react';
 import { Bar } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -13,7 +13,6 @@ import { BentoCard, BentoGrid } from '../components/BentoCard';
 import GitHubHeatmap from '../components/GitHubHeatmap';
 import { daysAgo, formatMinutes, predictDailyGoal } from '../lib/utils';
 import useAuthStore from '../stores/useAuthStore';
-import useToastStore from '../stores/useToastStore';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip);
 
@@ -23,7 +22,6 @@ export default function DashboardPage() {
   const [aiAdvice, setAiAdvice] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
   const user = useAuthStore((s) => s.user);
-  const refreshUser = useAuthStore((s) => s.refreshUser);
 
   useEffect(() => {
     const from = daysAgo(365);
@@ -222,8 +220,6 @@ export default function DashboardPage() {
                 )}
               </BentoCard>
 
-              {/* AI Settings */}
-              <AiSettingsPanel user={user} refreshUser={refreshUser} />
             </div>
           </div>
         )}
@@ -232,100 +228,3 @@ export default function DashboardPage() {
   );
 }
 
-function AiSettingsPanel({ user, refreshUser }) {
-  const [expanded, setExpanded] = useState(false);
-  const userPrompt = user?.aiSystemPrompt || '';
-  const userTokens = user?.aiMaxTokens || 0;
-  const [systemPrompt, setSystemPrompt] = useState(userPrompt);
-  const [maxTokens, setMaxTokens] = useState(userTokens);
-  const [saving, setSaving] = useState(false);
-  const toast = useToastStore();
-
-  // Sync local state when user data changes (e.g. after refreshUser)
-  const [prevPrompt, setPrevPrompt] = useState(userPrompt);
-  const [prevTokens, setPrevTokens] = useState(userTokens);
-  if (userPrompt !== prevPrompt) { setPrevPrompt(userPrompt); setSystemPrompt(userPrompt); }
-  if (userTokens !== prevTokens) { setPrevTokens(userTokens); setMaxTokens(userTokens); }
-
-  const handleSave = async () => {
-    setSaving(true);
-    try {
-      await api('/api/auth/profile', {
-        method: 'PUT',
-        body: JSON.stringify({
-          aiSystemPrompt: systemPrompt,
-          aiMaxTokens: maxTokens,
-        }),
-      });
-      toast.success('AI settings saved');
-      refreshUser();
-    } catch (err) {
-      toast.error(err.message || 'Failed to save');
-    }
-    setSaving(false);
-  };
-
-  return (
-    <BentoCard className="p-5">
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="flex items-center justify-between w-full"
-      >
-        <div className="flex items-center gap-2">
-          <Zap size={16} className="text-accent-400" />
-          <span className="text-sm font-semibold text-zen-200">Customize AI Behavior</span>
-        </div>
-        {expanded ? <ChevronUp size={16} className="text-zen-500" /> : <ChevronDown size={16} className="text-zen-500" />}
-      </button>
-
-      {expanded && (
-        <div className="mt-4 space-y-5">
-          {/* System Prompt */}
-          <div>
-            <label className="text-xs text-zen-400 block mb-1.5">AI System Prompt</label>
-            <textarea
-              value={systemPrompt}
-              onChange={(e) => setSystemPrompt(e.target.value)}
-              placeholder="Custom instructions for the AI advisor... Leave empty to use the default."
-              className="glass-input w-full text-sm min-h-[100px] resize-y"
-              maxLength={2000}
-            />
-            <p className="text-[10px] text-zen-600 mt-1">
-              {systemPrompt.length}/2000 — Prepended to every AI request. Leave empty for default behavior.
-            </p>
-          </div>
-
-          {/* Max Response Length */}
-          <div>
-            <label className="text-xs text-zen-400 block mb-1.5">Max Response Length</label>
-            <input
-              type="number"
-              value={maxTokens || ''}
-              onChange={(e) => {
-                const v = e.target.value === '' ? 0 : Number(e.target.value);
-                setMaxTokens(v);
-              }}
-              placeholder="Default (set by admin)"
-              min={0}
-              max={2000}
-              className="glass-input w-full text-sm"
-            />
-            <p className="text-[10px] text-zen-600 mt-1">
-              Token budget (100–2000). Higher values allow longer AI responses but take more time. Set to 0 or leave empty to use the admin default.
-            </p>
-          </div>
-
-          {/* Save Button */}
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="btn-accent text-xs flex items-center gap-1.5"
-          >
-            <Save size={12} />
-            {saving ? 'Saving...' : 'Save AI Settings'}
-          </button>
-        </div>
-      )}
-    </BentoCard>
-  );
-}

@@ -379,8 +379,6 @@ router.get('/me', authenticate, softBanCheck, lastActiveTouch, async (req, res) 
       createdAt: u.createdAt,
       pendingEmail: u.pendingEmail || null,
       geminiOptIn: u.geminiOptIn,
-      aiSystemPrompt: u.aiSystemPrompt || '',
-      aiMaxTokens: u.aiMaxTokens || 0,
       impersonator: req.impersonator || null,
       enforceDailyGoal: !!enforceDailyGoal,
       enforce2fa: !!enforce2fa,
@@ -413,15 +411,6 @@ router.put('/profile', authenticate, softBanCheck, async (req, res) => {
     }
     if (typeof geminiOptIn === 'boolean') {
       req.user.geminiOptIn = geminiOptIn;
-    }
-    if (typeof req.body.aiSystemPrompt === 'string') {
-      req.user.aiSystemPrompt = req.body.aiSystemPrompt.slice(0, 2000);
-    }
-    if (req.body.aiMaxTokens !== undefined) {
-      const val = Number(req.body.aiMaxTokens);
-      if (val === 0 || (val >= 100 && val <= 2000)) {
-        req.user.aiMaxTokens = val;
-      }
     }
     await req.user.save();
     res.json({ message: 'Profile updated' });

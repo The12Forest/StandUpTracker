@@ -41,7 +41,6 @@ const DEFAULTS = {
 
   // Social / Features
   friendRequestsEnabled: { value: true, description: 'Enable friend requests and social features', section: 'social' },
-  streakThresholdMinutes: { value: 3, description: 'Minimum minutes to count a day as active for streaks', section: 'social' },
 
   // Group Settings
   groupsEnabled: { value: true, description: 'Enable group creation and invitations', section: 'groups' },
@@ -56,8 +55,8 @@ const DEFAULTS = {
   ollamaEnabled: { value: false, description: 'Enable AI advisor feature globally', section: 'ai' },
   ollamaEndpoint: { value: 'http://localhost:11434', description: 'Ollama API endpoint URL (e.g. http://localhost:11434)', section: 'ai' },
   ollamaModel: { value: '', description: 'Active Ollama model name for AI features', section: 'ai' },
-  defaultAiSystemPrompt: { value: '', description: 'Default system prompt for AI advisor (used when user has not set their own)', section: 'ai' },
-  defaultAiMaxTokens: { value: 500, description: 'Default max response tokens for AI advisor (100-2000)', section: 'ai' },
+  defaultAiSystemPrompt: { value: '', description: 'System prompt for AI advisor (applies to all users)', section: 'ai' },
+  defaultAiMaxTokens: { value: 500, description: 'Max response tokens for AI advisor (100-2000, applies to all users)', section: 'ai' },
 
   // Enforcement
   masterDailyGoalMinutes: { value: 60, description: 'Master daily time goal for all users (minutes)', section: 'enforcement' },

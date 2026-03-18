@@ -17,6 +17,7 @@ import SettingsPage from './pages/SettingsPage';
 import SocialPage from './pages/SocialPage';
 import GroupsPage from './pages/GroupsPage';
 import StreaksPage from './pages/StreaksPage';
+import AdminUserTimePage from './pages/AdminUserTimePage';
 import SetupPage from './pages/SetupPage';
 import TwoFactorSetupPage from './pages/TwoFactorSetupPage';
 
@@ -78,6 +79,7 @@ function AppShell() {
               <Route path="/streaks" element={<StreaksPage />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/admin" element={<AdminPage />} />
+              <Route path="/admin/user/:userId/times" element={<AdminUserTimePage />} />
             </Route>
             <Route path="*" element={<Navigate to="/app" replace />} />
           </>

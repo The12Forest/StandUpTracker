@@ -204,7 +204,7 @@ export default function StreaksPage() {
       {/* Threshold info */}
       {thresholdMinutes && (
         <p className="text-[10px] text-zen-600 text-center">
-          Streak threshold: {thresholdMinutes} minutes of standing per day
+          Daily goal: {thresholdMinutes} minutes of standing per day
         </p>
       )}
     </div>

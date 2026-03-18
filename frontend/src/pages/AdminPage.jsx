@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Shield, Users, Activity, Server, ScrollText, Settings,
   Search, RefreshCw, Eye, EyeOff, Sliders, UserCheck, Calendar,
@@ -288,6 +289,7 @@ function UsersTab() {
   const [passwordModal, setPasswordModal] = useState(null);
   const [newPw, setNewPw] = useState('');
   const toast = useToastStore();
+  const navigate = useNavigate();
   const currentUser = useAuthStore((s) => s.user);
   const startImpersonation = useAuthStore((s) => s.startImpersonation);
 
@@ -480,6 +482,9 @@ function UsersTab() {
                           <button onClick={() => handleImpersonate(u.userId)} className="text-[10px] px-1.5 py-0.5 rounded text-warn-400 hover:bg-warn-500/10 flex items-center gap-0.5" title="Impersonate">
                             <Eye size={11} /> View As
                           </button>
+                          <button onClick={() => navigate(`/admin/user/${u.userId}/times`)} className="text-[10px] px-1.5 py-0.5 rounded text-accent-400 hover:bg-accent-500/10 flex items-center gap-0.5" title="Edit Daily Times">
+                            <Clock size={11} /> Edit Time
+                          </button>
                           <button onClick={() => handleBlockUser(u.userId, u.active)} className="text-[10px] px-1.5 py-0.5 rounded text-zen-500 hover:bg-zen-700/50 flex items-center gap-0.5" title={u.active ? 'Deactivate' : 'Reactivate'}>
                             {u.active ? <><Ban size={11} /> Deactivate</> : <><Unlock size={11} /> Reactivate</>}
                           </button>
@@ -629,9 +634,8 @@ function SettingsTab() {
     ollamaEnabled: 'Enable or disable the AI Advisor feature for users who opt in.',
     ollamaEndpoint: 'Full URL to your Ollama instance (e.g. http://localhost:11434). Must be reachable from the server.',
     ollamaModel: 'Select which Ollama model to use for generating advice. Click "Refresh" to load available models from the endpoint.',
-    defaultAiSystemPrompt: 'Global fallback system prompt sent to Ollama when a user has not configured their own. Leave empty to use the built-in default.',
-    defaultAiMaxTokens: 'Default max response tokens (100-2000) for AI advice when a user has not set their own. Controls response length.',
-    streakThresholdMinutes: 'Minimum standing minutes per day to count toward a streak.',
+    defaultAiSystemPrompt: 'System prompt sent to Ollama for all AI advice requests. Leave empty to use the built-in default.',
+    defaultAiMaxTokens: 'Max response tokens (100-2000) for AI advice. Controls response length for all users.',
     maxGroupsPerUser: 'Maximum number of groups a user can create or join.',
     maxGroupMembers: 'Maximum members allowed in a single group.',
       maxGroupSize: 'Maximum members allowed in a single group.',

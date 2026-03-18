@@ -31,8 +31,6 @@ const userSchema = new mongoose.Schema({
   lastActiveAt: Date,
   blockedUntil: Date,
   geminiOptIn: { type: Boolean, default: false },
-  aiSystemPrompt: { type: String, default: '' },
-  aiMaxTokens: { type: Number, default: 0 }, // 0 = use admin default
   // Active timer (server-authoritative)
   timerRunning: { type: Boolean, default: false },
   timerStartedAt: { type: Date, default: null },

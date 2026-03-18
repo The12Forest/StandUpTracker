@@ -6,6 +6,7 @@ const User = require('../models/User');
 const Notification = require('../models/Notification');
 const TrackingData = require('../models/TrackingData');
 const Settings = require('../models/Settings');
+const { getEffectiveGoalMinutes } = require('../utils/settings');
 
 const router = express.Router();
 router.use(authenticate, softBanCheck, lastActiveTouch);
@@ -63,22 +64,31 @@ router.get('/:groupId', async (req, res) => {
     const userMap = {};
     users.forEach(u => { userMap[u.userId] = u; });
 
-    // Check today's threshold for each member
-    const threshold = await Settings.get('streakThresholdMinutes') || 3;
+    // Check today's goal for each member using their effective daily goal
     const today = new Date().toISOString().slice(0, 10);
     const todayData = await TrackingData.find({ userId: { $in: memberIds }, date: today });
     const todayMap = {};
     todayData.forEach(d => { todayMap[d.userId] = d.seconds; });
 
-    const members = group.members.map(m => ({
-      userId: m.userId,
-      username: userMap[m.userId]?.username || 'Unknown',
-      level: userMap[m.userId]?.level || 1,
-      role: m.role,
-      joinedAt: m.joinedAt,
-      todaySeconds: todayMap[m.userId] || 0,
-      metThreshold: (todayMap[m.userId] || 0) >= threshold * 60,
-    }));
+    // Load full user docs for goal calculation
+    const memberUsers = await User.find({ userId: { $in: memberIds } }).select('userId dailyGoalMinutes');
+    const memberGoalMap = {};
+    for (const mu of memberUsers) {
+      memberGoalMap[mu.userId] = await getEffectiveGoalMinutes(mu);
+    }
+
+    const members = group.members.map(m => {
+      const memberGoal = memberGoalMap[m.userId] || 60;
+      return {
+        userId: m.userId,
+        username: userMap[m.userId]?.username || 'Unknown',
+        level: userMap[m.userId]?.level || 1,
+        role: m.role,
+        joinedAt: m.joinedAt,
+        todaySeconds: todayMap[m.userId] || 0,
+        metThreshold: (todayMap[m.userId] || 0) >= memberGoal * 60,
+      };
+    });
 
     res.json({
       groupId: group.groupId,

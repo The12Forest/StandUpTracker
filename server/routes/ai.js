@@ -96,16 +96,14 @@ router.post('/advice', authenticate, softBanCheck, requireVerified, aiGateCheck,
     const goalMinutes = req.user.dailyGoalMinutes;
     const daysMetGoal = dailyData.filter(d => d.minutes >= goalMinutes).length;
 
-    // Resolve system prompt: user override > admin default > built-in
-    const userSystemPrompt = req.user.aiSystemPrompt || '';
+    // System prompt: admin default > built-in
     const adminSystemPrompt = await Settings.get('defaultAiSystemPrompt') || '';
     const builtInSystemPrompt = `You are a productivity coach for a standing desk tracker app called StandUpTracker. Be encouraging but honest. Keep response under 150 words. Use simple language.`;
-    const systemPrompt = userSystemPrompt || adminSystemPrompt || builtInSystemPrompt;
+    const systemPrompt = adminSystemPrompt || builtInSystemPrompt;
 
-    // Resolve max tokens: user override > admin default > 500
-    const userMaxTokens = req.user.aiMaxTokens || 0;
+    // Max tokens: admin default > 500
     const adminMaxTokens = await Settings.get('defaultAiMaxTokens') || 500;
-    const numPredict = userMaxTokens > 0 ? Math.min(Math.max(userMaxTokens, 100), 2000) : Math.min(Math.max(adminMaxTokens, 100), 2000);
+    const numPredict = Math.min(Math.max(adminMaxTokens, 100), 2000);
 
     const prompt = `Analyze this user's data and give 2-3 brief, actionable tips.
 

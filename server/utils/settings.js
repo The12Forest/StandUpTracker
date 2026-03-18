@@ -82,11 +82,24 @@ async function isSetupComplete() {
   }
 }
 
-async function getEffectiveGoalMinutes(user) {
+async function getEffectiveGoalMinutes(user, date) {
+  // If a specific date is provided, check for per-day admin override first
+  if (date) {
+    const DailyGoalOverride = require('../models/DailyGoalOverride');
+    const override = await DailyGoalOverride.findOne({ userId: user.userId || user, date });
+    if (override) return override.goalMinutes;
+  }
+
   const enforced = await getSetting('enforceDailyGoal');
   if (enforced) {
     const masterGoal = await getSetting('masterDailyGoalMinutes');
     return masterGoal || 60;
+  }
+  // Handle case where user is a userId string (not a full doc)
+  if (typeof user === 'string') {
+    const User = require('../models/User');
+    const userDoc = await User.findOne({ userId: user });
+    return userDoc?.dailyGoalMinutes || 60;
   }
   return user.dailyGoalMinutes;
 }

@@ -7,6 +7,7 @@ const TrackingData = require('../models/TrackingData');
 const User = require('../models/User');
 const Settings = require('../models/Settings');
 const Notification = require('../models/Notification');
+const { getEffectiveGoalMinutes } = require('../utils/settings');
 
 const router = express.Router();
 
@@ -335,14 +336,24 @@ router.get('/streaks', async (req, res) => {
     const friends = await User.find({ userId: { $in: friendIds }, active: true })
       .select('userId username');
 
-    const threshold = await Settings.get('streakThresholdMinutes') || 3;
     const today = new Date().toISOString().slice(0, 10);
+
+    // Get effective goal for current user
+    const myGoal = await getEffectiveGoalMinutes(req.user);
 
     // Get today's tracking for user + all friends
     const allIds = [uid, ...friendIds];
     const todayData = await TrackingData.find({ userId: { $in: allIds }, date: today });
     const todayMap = {};
     todayData.forEach(d => { todayMap[d.userId] = d.seconds; });
+
+    // Load friend user docs to get their effective goals
+    const friendUsers = await User.find({ userId: { $in: friendIds }, active: true })
+      .select('userId dailyGoalMinutes');
+    const friendGoalMap = {};
+    for (const fu of friendUsers) {
+      friendGoalMap[fu.userId] = await getEffectiveGoalMinutes(fu);
+    }
 
     const streakPromises = friendIds.map(fid => {
       const pair = streakPair(uid, fid);
@@ -355,6 +366,7 @@ router.get('/streaks', async (req, res) => {
 
     const result = friendIds.map((fid, i) => {
       const s = streaks[i];
+      const friendGoal = friendGoalMap[fid] || 60;
       return {
         friendId: fid,
         friendName: userMap[fid] || 'Unknown',
@@ -363,12 +375,12 @@ router.get('/streaks', async (req, res) => {
         lastSyncDate: s?.lastSyncDate || null,
         myTodaySeconds: todayMap[uid] || 0,
         friendTodaySeconds: todayMap[fid] || 0,
-        myMetThreshold: (todayMap[uid] || 0) >= threshold * 60,
-        friendMetThreshold: (todayMap[fid] || 0) >= threshold * 60,
+        myMetThreshold: (todayMap[uid] || 0) >= myGoal * 60,
+        friendMetThreshold: (todayMap[fid] || 0) >= friendGoal * 60,
       };
     });
 
-    res.json({ streaks: result, thresholdMinutes: threshold });
+    res.json({ streaks: result, thresholdMinutes: myGoal });
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch streaks' });
   }

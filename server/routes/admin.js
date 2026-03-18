@@ -11,6 +11,7 @@ const TrackingData = require('../models/TrackingData');
 const AuditLog = require('../models/AuditLog');
 const Friendship = require('../models/Friendship');
 const Group = require('../models/Group');
+const DailyGoalOverride = require('../models/DailyGoalOverride');
 const logger = require('../utils/logger');
 const { sendVerificationEmail, resetTransporter, testSmtpConnection } = require('../utils/email');
 const { getJwtSecret, getAppConfig, invalidateCache, getEffectiveGoalMinutes } = require('../utils/settings');
@@ -28,9 +29,17 @@ async function recalcUserStats(userId) {
   if (!user) return;
   const allData = await TrackingData.find({ userId });
   const totalSeconds = allData.reduce((sum, d) => sum + d.seconds, 0);
-  const totalDays = allData.filter(d => d.seconds > 180).length;
-  const effectiveGoal = await getEffectiveGoalMinutes(user);
-  const goalSeconds = effectiveGoal * 60;
+  const defaultGoal = await getEffectiveGoalMinutes(user);
+  const defaultGoalSeconds = defaultGoal * 60;
+
+  // Load per-day overrides for this user
+  const overrides = await DailyGoalOverride.find({ userId });
+  const overrideMap = {};
+  overrides.forEach(o => { overrideMap[o.date] = o.goalMinutes * 60; });
+
+  const getGoalSecondsForDate = (date) => overrideMap[date] || defaultGoalSeconds;
+
+  const totalDays = allData.filter(d => d.seconds >= getGoalSecondsForDate(d.date)).length;
   const dataMap = {};
   allData.forEach(d => { dataMap[d.date] = d.seconds; });
   const sorted = allData.map(d => d.date).sort().reverse();
@@ -42,7 +51,7 @@ async function recalcUserStats(userId) {
     const d = new Date(todayDate);
     d.setDate(d.getDate() - i);
     const dateStr = d.toISOString().slice(0, 10);
-    if ((dataMap[dateStr] || 0) >= goalSeconds) currentStreak++;
+    if ((dataMap[dateStr] || 0) >= getGoalSecondsForDate(dateStr)) currentStreak++;
     else break;
   }
 
@@ -52,7 +61,7 @@ async function recalcUserStats(userId) {
     const lastDate = new Date(sorted[0] + 'T00:00:00');
     for (let d = new Date(firstDate); d <= lastDate; d.setDate(d.getDate() + 1)) {
       const dateStr = d.toISOString().slice(0, 10);
-      if ((dataMap[dateStr] || 0) >= goalSeconds) { run++; bestStreak = Math.max(bestStreak, run); }
+      if ((dataMap[dateStr] || 0) >= getGoalSecondsForDate(dateStr)) { run++; bestStreak = Math.max(bestStreak, run); }
       else run = 0;
     }
   }
@@ -806,6 +815,115 @@ router.put('/users/:userId/block', requireRole('super_admin'), async (req, res) 
     res.json({ message: blocked ? 'User blocked' : 'User unblocked' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to update block status' });
+  }
+});
+
+// ─── Admin: Per-user per-day time editor data ───
+router.get('/users/:userId/daily-times', requireRole(...adminRoles), async (req, res) => {
+  try {
+    const user = await User.findOne({ userId: req.params.userId });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const effectiveGoal = await getEffectiveGoalMinutes(user);
+
+    // Get tracking data for past 90 days + next 30 days range
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - 90);
+    const endDate = new Date();
+    endDate.setDate(endDate.getDate() + 30);
+    const startStr = startDate.toISOString().slice(0, 10);
+    const endStr = endDate.toISOString().slice(0, 10);
+
+    const tracking = await TrackingData.find({
+      userId: req.params.userId,
+      date: { $gte: startStr, $lte: endStr },
+    });
+    const trackingMap = {};
+    tracking.forEach(d => { trackingMap[d.date] = d.seconds; });
+
+    // Get all overrides in range
+    const overrides = await DailyGoalOverride.find({
+      userId: req.params.userId,
+      date: { $gte: startStr, $lte: endStr },
+    });
+    const overrideMap = {};
+    overrides.forEach(o => { overrideMap[o.date] = o.goalMinutes; });
+
+    res.json({
+      userId: user.userId,
+      username: user.username,
+      defaultGoalMinutes: effectiveGoal,
+      trackingMap,
+      overrideMap,
+      startDate: startStr,
+      endDate: endStr,
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch daily times' });
+  }
+});
+
+// ─── Admin: Set per-day goal override ───
+router.put('/users/:userId/daily-goal/:date', requireRole(...adminRoles), async (req, res) => {
+  try {
+    const { goalMinutes } = req.body;
+    if (!goalMinutes || goalMinutes < 1 || goalMinutes > 1440) {
+      return res.status(400).json({ error: 'goalMinutes must be between 1 and 1440' });
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(req.params.date)) {
+      return res.status(400).json({ error: 'Invalid date format (YYYY-MM-DD required)' });
+    }
+
+    await DailyGoalOverride.findOneAndUpdate(
+      { userId: req.params.userId, date: req.params.date },
+      { $set: { goalMinutes } },
+      { upsert: true }
+    );
+
+    // Recalc user stats since goal override may affect streaks
+    await recalcUserStats(req.params.userId);
+
+    await AuditLog.create({
+      actorId: req.impersonator?.userId || req.user.userId,
+      actorRole: req.impersonator?.role || req.user.role,
+      targetId: req.params.userId, action: 'daily_goal_override',
+      details: { date: req.params.date, goalMinutes },
+      ip: req.ip,
+    });
+
+    res.json({ message: 'Daily goal override saved' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to save daily goal override' });
+  }
+});
+
+// ─── Admin: Clear per-day goal override ───
+router.delete('/users/:userId/daily-goal/:date', requireRole(...adminRoles), async (req, res) => {
+  try {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(req.params.date)) {
+      return res.status(400).json({ error: 'Invalid date format' });
+    }
+
+    const deleted = await DailyGoalOverride.findOneAndDelete({
+      userId: req.params.userId,
+      date: req.params.date,
+    });
+    if (!deleted) return res.status(404).json({ error: 'No override found for this date' });
+
+    // Recalc user stats since removing override may affect streaks
+    await recalcUserStats(req.params.userId);
+
+    await AuditLog.create({
+      actorId: req.impersonator?.userId || req.user.userId,
+      actorRole: req.impersonator?.role || req.user.role,
+      targetId: req.params.userId, action: 'daily_goal_override_clear',
+      details: { date: req.params.date },
+      ip: req.ip,
+    });
+
+    res.json({ message: 'Override cleared' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to clear override' });
   }
 });
 
