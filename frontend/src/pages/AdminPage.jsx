@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Shield, Users, Activity, Server, ScrollText, Settings,
   Search, RefreshCw, Eye, EyeOff, Sliders, UserCheck, Calendar,
@@ -27,7 +27,9 @@ const TABS = [
 ];
 
 export default function AdminPage() {
-  const [tab, setTab] = useState('overview');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = searchParams.get('tab') || 'overview';
+  const setTab = (id) => setSearchParams({ tab: id }, { replace: true });
   return (
     <div className="space-y-6">
       <h2 className="text-xl font-bold text-zen-100 flex items-center gap-2">
@@ -636,6 +638,8 @@ function SettingsTab() {
     ollamaModel: 'Select which Ollama model to use for generating advice. Click "Refresh" to load available models from the endpoint.',
     defaultAiSystemPrompt: 'System prompt sent to Ollama for all AI advice requests. Leave empty to use the built-in default.',
     defaultAiMaxTokens: 'Max response tokens (100-2000) for AI advice. Controls response length for all users.',
+    aiAdviceCooldownMinutes: 'Minimum minutes a user must wait between AI advice refresh requests (1-1440). Prevents excessive API calls.',
+    aiAdviceCacheDurationMinutes: 'How long (in minutes) AI advice is cached per user before requiring fresh generation (1-1440).',
     maxGroupsPerUser: 'Maximum number of groups a user can create or join.',
     maxGroupMembers: 'Maximum members allowed in a single group.',
       maxGroupSize: 'Maximum members allowed in a single group.',

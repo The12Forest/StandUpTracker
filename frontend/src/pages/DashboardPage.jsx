@@ -1,5 +1,5 @@
-import { useEffect, useState, useMemo } from 'react';
-import { BarChart3, Calendar, TrendingUp, Brain, Sparkles } from 'lucide-react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
+import { BarChart3, Calendar, TrendingUp, Brain, Sparkles, RefreshCw, Clock } from 'lucide-react';
 import { Bar } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -8,6 +8,7 @@ import {
   BarElement,
   Tooltip,
 } from 'chart.js';
+import ReactMarkdown from 'react-markdown';
 import { api } from '../lib/api';
 import { BentoCard, BentoGrid } from '../components/BentoCard';
 import GitHubHeatmap from '../components/GitHubHeatmap';
@@ -16,11 +17,45 @@ import useAuthStore from '../stores/useAuthStore';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip);
 
+function CooldownTimer({ nextRefreshAt, onReady }) {
+  const [remaining, setRemaining] = useState('');
+
+  useEffect(() => {
+    if (!nextRefreshAt) return;
+    const target = new Date(nextRefreshAt).getTime();
+
+    function tick() {
+      const diff = target - Date.now();
+      if (diff <= 0) {
+        setRemaining('');
+        onReady?.();
+        return;
+      }
+      const m = Math.floor(diff / 60000);
+      const s = Math.floor((diff % 60000) / 1000);
+      setRemaining(`${m}:${String(s).padStart(2, '0')}`);
+    }
+
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [nextRefreshAt, onReady]);
+
+  if (!remaining) return null;
+  return (
+    <span className="text-[10px] text-zen-500 flex items-center gap-1">
+      <Clock size={10} />
+      Refresh in {remaining}
+    </span>
+  );
+}
+
 export default function DashboardPage() {
   const [tracking, setTracking] = useState({});
   const [stats, setStats] = useState(null);
   const [aiAdvice, setAiAdvice] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
+  const [cooldownActive, setCooldownActive] = useState(false);
   const user = useAuthStore((s) => s.user);
 
   useEffect(() => {
@@ -34,6 +69,42 @@ export default function DashboardPage() {
       setStats(s);
     }).catch(() => {});
   }, []);
+
+  // Load cached AI advice on mount
+  useEffect(() => {
+    if (!user?.geminiOptIn) return;
+    api('/api/ai/advice?context=dashboard')
+      .then(data => {
+        if (data.advice) {
+          setAiAdvice(data);
+          if (data.nextRefreshAt && new Date(data.nextRefreshAt) > new Date()) {
+            setCooldownActive(true);
+          }
+        }
+      })
+      .catch(() => {});
+  }, [user?.geminiOptIn]);
+
+  const handleCooldownReady = useCallback(() => setCooldownActive(false), []);
+
+  const requestAdvice = async (forceRefresh = false) => {
+    setAiLoading(true);
+    try {
+      const data = await api('/api/ai/advice', {
+        method: 'POST',
+        body: JSON.stringify({ context: 'dashboard', forceRefresh }),
+      });
+      setAiAdvice(data);
+      if (data.nextRefreshAt) setCooldownActive(true);
+    } catch (err) {
+      // 429 = cooldown, show returned cached advice
+      if (err.status === 429 && err.data?.advice) {
+        setAiAdvice(err.data);
+        setCooldownActive(true);
+      }
+    }
+    setAiLoading(false);
+  };
 
   // Bar chart: last 30 days
   const barData = useMemo(() => {
@@ -80,6 +151,17 @@ export default function DashboardPage() {
       .sort((a, b) => a.date.localeCompare(b.date));
   }, [tracking]);
   const prediction = predictDailyGoal(historyArr, user?.dailyGoalMinutes || 30);
+
+  const [generatedAgo, setGeneratedAgo] = useState(null);
+  useEffect(() => {
+    if (!aiAdvice?.generatedAt) { setGeneratedAgo(null); return; }
+    function calc() {
+      setGeneratedAgo(Math.round((Date.now() - new Date(aiAdvice.generatedAt).getTime()) / 60000));
+    }
+    calc();
+    const id = setInterval(calc, 60000);
+    return () => clearInterval(id);
+  }, [aiAdvice?.generatedAt]);
 
   return (
     <div className="space-y-6">
@@ -168,58 +250,72 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* Right column: AI Advice panel */}
+        {/* Right column: AI Advice panel — full height */}
         {user?.geminiOptIn && (
           <div className="w-full xl:w-96 xl:shrink-0">
-            <div className="xl:sticky xl:top-6 space-y-4">
-              {/* AI Advisor card */}
-              <BentoCard className="p-5">
-                <div className="flex items-center gap-2 mb-4">
-                  <Sparkles size={16} className="text-accent-400" />
-                  <span className="text-sm font-semibold text-zen-200">AI Advisor</span>
+            <div className="xl:sticky xl:top-6 flex flex-col" style={{ maxHeight: 'calc(100vh - 6rem)' }}>
+              <BentoCard className="p-5 flex flex-col flex-1 min-h-0">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <Sparkles size={16} className="text-accent-400" />
+                    <span className="text-sm font-semibold text-zen-200">AI Advisor</span>
+                  </div>
+                  {aiAdvice && (
+                    <CooldownTimer nextRefreshAt={aiAdvice.nextRefreshAt} onReady={handleCooldownReady} />
+                  )}
                 </div>
-                {aiAdvice ? (
-                  <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
-                    <p className="text-sm text-zen-200 whitespace-pre-line leading-relaxed">{aiAdvice.advice}</p>
-                    <p className="text-[10px] text-zen-600 mt-2">
-                      {aiAdvice.cached ? 'Cached' : 'Fresh'} — {new Date(aiAdvice.generatedAt).toLocaleString()}
-                    </p>
-                    <button
-                      onClick={async () => {
-                        setAiLoading(true);
-                        try {
-                          const data = await api('/api/ai/advice', { method: 'POST', body: JSON.stringify({ context: 'dashboard' }) });
-                          setAiAdvice(data);
-                        } catch { /* ignore */ }
-                        setAiLoading(false);
-                      }}
-                      disabled={aiLoading}
-                      className="btn-ghost text-xs"
-                    >
-                      {aiLoading ? 'Thinking...' : 'Refresh Advice'}
-                    </button>
+
+                {aiAdvice?.advice ? (
+                  <div className="flex flex-col flex-1 min-h-0">
+                    <div className="flex-1 overflow-y-auto pr-1 mb-3 prose-ai">
+                      <ReactMarkdown
+                        components={{
+                          p: ({ children }) => <p className="text-sm text-zen-200 leading-relaxed mb-2">{children}</p>,
+                          ul: ({ children }) => <ul className="text-sm text-zen-200 list-disc pl-4 mb-2 space-y-1">{children}</ul>,
+                          ol: ({ children }) => <ol className="text-sm text-zen-200 list-decimal pl-4 mb-2 space-y-1">{children}</ol>,
+                          li: ({ children }) => <li className="text-sm text-zen-200 leading-relaxed">{children}</li>,
+                          strong: ({ children }) => <strong className="text-zen-100 font-semibold">{children}</strong>,
+                          em: ({ children }) => <em className="text-zen-300">{children}</em>,
+                          h1: ({ children }) => <h3 className="text-base font-bold text-zen-100 mb-2">{children}</h3>,
+                          h2: ({ children }) => <h3 className="text-sm font-bold text-zen-100 mb-2">{children}</h3>,
+                          h3: ({ children }) => <h4 className="text-sm font-semibold text-zen-200 mb-1">{children}</h4>,
+                          code: ({ children }) => <code className="text-xs bg-zen-800 text-accent-400 px-1 py-0.5 rounded">{children}</code>,
+                          blockquote: ({ children }) => <blockquote className="border-l-2 border-accent-500/30 pl-3 text-zen-300 italic">{children}</blockquote>,
+                        }}
+                      >
+                        {aiAdvice.advice}
+                      </ReactMarkdown>
+                    </div>
+
+                    <div className="border-t border-zen-700/30 pt-3 space-y-2">
+                      <p className="text-[10px] text-zen-600">
+                        {aiAdvice.cached ? 'Cached' : 'Fresh'}
+                        {generatedAgo !== null && ` — Generated ${generatedAgo < 1 ? 'just now' : `${generatedAgo}m ago`}`}
+                      </p>
+                      <button
+                        onClick={() => requestAdvice(true)}
+                        disabled={aiLoading || cooldownActive}
+                        className="btn-ghost text-xs flex items-center gap-1.5 disabled:opacity-40"
+                      >
+                        <RefreshCw size={12} className={aiLoading ? 'animate-spin' : ''} />
+                        {aiLoading ? 'Thinking...' : cooldownActive ? 'Cooldown active' : 'Refresh Advice'}
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <div className="space-y-3">
                     <p className="text-xs text-zen-500">Get personalized standing advice powered by AI</p>
                     <button
-                      onClick={async () => {
-                        setAiLoading(true);
-                        try {
-                          const data = await api('/api/ai/advice', { method: 'POST', body: JSON.stringify({ context: 'dashboard' }) });
-                          setAiAdvice(data);
-                        } catch { /* ignore */ }
-                        setAiLoading(false);
-                      }}
+                      onClick={() => requestAdvice(false)}
                       disabled={aiLoading}
-                      className="btn-accent text-xs"
+                      className="btn-accent text-xs flex items-center gap-1.5"
                     >
+                      <Sparkles size={12} className={aiLoading ? 'animate-spin' : ''} />
                       {aiLoading ? 'Thinking...' : 'Get Advice'}
                     </button>
                   </div>
                 )}
               </BentoCard>
-
             </div>
           </div>
         )}
@@ -227,4 +323,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-

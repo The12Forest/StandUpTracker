@@ -7,6 +7,7 @@ const User = require('../models/User');
 const DailyGoalOverride = require('../models/DailyGoalOverride');
 const { syncFriendStreaks, syncGroupStreaks } = require('../utils/streaks');
 const { getEffectiveGoalMinutes } = require('../utils/settings');
+const { recalcUserStats } = require('../utils/recalcStats');
 
 const router = express.Router();
 
@@ -403,6 +404,82 @@ router.get('/stats', async (req, res) => {
     level: u.level,
     dailyGoalMinutes: effectiveGoal,
   });
+});
+
+// ─── My Time: user self-service time viewing/editing ───
+
+// GET /my-times — return user's own tracking data + goal info
+router.get('/my-times', requireVerified, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const data = await TrackingData.find({ userId }).sort({ date: -1 }).limit(365);
+    const goalMinutes = await getEffectiveGoalMinutes(req.user);
+    res.json({ data, goalMinutes });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch time data' });
+  }
+});
+
+// PUT /my-times/:date — edit own recorded time (manual override)
+router.put('/my-times/:date', requireVerified, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { date } = req.params;
+    const { seconds } = req.body;
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return res.status(400).json({ error: 'Invalid date format' });
+    }
+    if (seconds == null || seconds < 0 || seconds > 86400) {
+      return res.status(400).json({ error: 'Invalid seconds value' });
+    }
+
+    const existing = await TrackingData.findOne({ userId, date });
+    if (!existing) {
+      return res.status(404).json({ error: 'No tracking record for this date' });
+    }
+
+    // Store original if this is the first manual override
+    if (!existing.manualOverride && existing.originalSeconds == null) {
+      existing.originalSeconds = existing.seconds;
+    }
+    existing.seconds = seconds;
+    existing.manualOverride = true;
+    await existing.save();
+
+    await recalcUserStats(userId);
+
+    res.json({ message: 'Time updated', date, seconds, manualOverride: true, originalSeconds: existing.originalSeconds });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update time' });
+  }
+});
+
+// DELETE /my-times/:date/override — reset manual override to original timer value
+router.delete('/my-times/:date/override', requireVerified, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { date } = req.params;
+
+    const existing = await TrackingData.findOne({ userId, date });
+    if (!existing) {
+      return res.status(404).json({ error: 'No tracking record for this date' });
+    }
+    if (!existing.manualOverride) {
+      return res.status(400).json({ error: 'No manual override to reset' });
+    }
+
+    existing.seconds = existing.originalSeconds != null ? existing.originalSeconds : existing.seconds;
+    existing.manualOverride = false;
+    existing.originalSeconds = null;
+    await existing.save();
+
+    await recalcUserStats(userId);
+
+    res.json({ message: 'Override reset', date, seconds: existing.seconds });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to reset override' });
+  }
 });
 
 module.exports = router;

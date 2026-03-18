@@ -2,30 +2,27 @@ const express = require('express');
 const { authenticate, requireVerified, requireRole } = require('../middleware/auth');
 const { aiGateCheck, softBanCheck } = require('../middleware/guards');
 const TrackingData = require('../models/TrackingData');
+const AiAdviceCache = require('../models/AiAdviceCache');
 const Settings = require('../models/Settings');
-const { getEffectiveGoalMinutes } = require('../utils/settings');
+const { getEffectiveGoalMinutes, getSetting } = require('../utils/settings');
 const logger = require('../utils/logger');
 
 const router = express.Router();
 
-// In-memory rate limiter: max 5 per user per hour
+// In-memory rate limiter: max 10 per user per hour (safety net on top of cooldown)
 const aiRateMap = new Map();
 function aiRateLimit(req, res, next) {
   const uid = req.user.userId;
   const now = Date.now();
   const window = 60 * 60 * 1000;
   const entries = (aiRateMap.get(uid) || []).filter(t => now - t < window);
-  if (entries.length >= 5) {
+  if (entries.length >= 10) {
     return res.status(429).json({ error: 'AI rate limit reached. Try again later.' });
   }
   entries.push(now);
   aiRateMap.set(uid, entries);
   next();
 }
-
-// In-memory response cache (userId:context -> {advice, generatedAt})
-const aiCache = new Map();
-const CACHE_TTL = 6 * 60 * 60 * 1000;
 
 // Fetch available Ollama models (admin only)
 router.get('/models', authenticate, softBanCheck, requireRole('admin', 'super_admin'), async (req, res) => {
@@ -64,15 +61,76 @@ router.get('/models', authenticate, softBanCheck, requireRole('admin', 'super_ad
   }
 });
 
+// GET /api/ai/advice — serve cached advice or indicate none available (no generation)
+router.get('/advice', authenticate, softBanCheck, requireVerified, aiGateCheck, async (req, res) => {
+  try {
+    const { context = 'dashboard' } = req.query;
+    const userId = req.user.userId;
+
+    // Serve from DB cache if still valid
+    const cached = await AiAdviceCache.findOne({ userId, context, expiresAt: { $gt: new Date() } });
+    if (cached) {
+      const cooldownMinutes = await getSetting('aiAdviceCooldownMinutes') || 30;
+      const cooldownMs = cooldownMinutes * 60 * 1000;
+      const nextRefreshAt = new Date(cached.generatedAt.getTime() + cooldownMs).toISOString();
+      return res.json({
+        advice: cached.advice,
+        generatedAt: cached.generatedAt.toISOString(),
+        cached: true,
+        nextRefreshAt,
+      });
+    }
+
+    res.json({ advice: null, cached: false });
+  } catch (err) {
+    logger.error('AI advice GET error', { source: 'ai', meta: { error: err.message } });
+    res.status(500).json({ error: 'Failed to fetch advice' });
+  }
+});
+
+// POST /api/ai/advice — generate fresh advice (subject to cooldown)
 router.post('/advice', authenticate, softBanCheck, requireVerified, aiGateCheck, aiRateLimit, async (req, res) => {
   try {
-    const { context = 'dashboard' } = req.body;
-    const cacheKey = `${req.user.userId}:${context}`;
+    const { context = 'dashboard', forceRefresh = false } = req.body;
+    const userId = req.user.userId;
 
-    // Check cache
-    const cached = aiCache.get(cacheKey);
-    if (cached && Date.now() - cached.cachedAt < CACHE_TTL) {
-      return res.json({ advice: cached.advice, generatedAt: cached.generatedAt, cached: true });
+    // Check cooldown — look at last generated entry regardless of cache expiry
+    const cooldownMinutes = await getSetting('aiAdviceCooldownMinutes') || 30;
+    const cooldownMs = cooldownMinutes * 60 * 1000;
+    const lastEntry = await AiAdviceCache.findOne({ userId, context }).sort({ generatedAt: -1 });
+
+    if (lastEntry && forceRefresh) {
+      const elapsed = Date.now() - lastEntry.generatedAt.getTime();
+      if (elapsed < cooldownMs) {
+        const retryAfterSeconds = Math.ceil((cooldownMs - elapsed) / 1000);
+        const nextRefreshAt = new Date(lastEntry.generatedAt.getTime() + cooldownMs).toISOString();
+        return res.status(429).json({
+          error: `Please wait before refreshing advice`,
+          retryAfterSeconds,
+          nextRefreshAt,
+          // Return cached advice so UI still shows it
+          advice: lastEntry.advice,
+          generatedAt: lastEntry.generatedAt.toISOString(),
+          cached: true,
+        });
+      }
+    }
+
+    // Check DB cache (not a forced refresh)
+    const cacheDurationMinutes = await getSetting('aiAdviceCacheDurationMinutes') || 30;
+    const cacheDurationMs = cacheDurationMinutes * 60 * 1000;
+
+    if (!forceRefresh && lastEntry) {
+      const cacheAge = Date.now() - lastEntry.generatedAt.getTime();
+      if (cacheAge < cacheDurationMs) {
+        const nextRefreshAt = new Date(lastEntry.generatedAt.getTime() + cooldownMs).toISOString();
+        return res.json({
+          advice: lastEntry.advice,
+          generatedAt: lastEntry.generatedAt.toISOString(),
+          cached: true,
+          nextRefreshAt,
+        });
+      }
     }
 
     const ollamaEndpoint = await Settings.get('ollamaEndpoint');
@@ -86,7 +144,7 @@ router.post('/advice', authenticate, softBanCheck, requireVerified, aiGateCheck,
     const from = new Date();
     from.setDate(from.getDate() - 30);
     const data = await TrackingData.find({
-      userId: req.user.userId,
+      userId,
       date: { $gte: from.toISOString().slice(0, 10) },
     }).sort({ date: 1 });
 
@@ -99,7 +157,7 @@ router.post('/advice', authenticate, softBanCheck, requireVerified, aiGateCheck,
 
     // System prompt: admin default > built-in
     const adminSystemPrompt = await Settings.get('defaultAiSystemPrompt') || '';
-    const builtInSystemPrompt = `You are a productivity coach for a standing desk tracker app called StandUpTracker. Be encouraging but honest. Keep response under 150 words. Use simple language.`;
+    const builtInSystemPrompt = `You are a productivity coach for a standing desk tracker app called StandUpTracker. Be encouraging but honest. Keep response under 150 words. Use simple language. Use markdown formatting for readability.`;
     const systemPrompt = adminSystemPrompt || builtInSystemPrompt;
 
     // Max tokens: admin default > 500
@@ -120,7 +178,7 @@ Last 30 days summary:
 
 Daily breakdown: ${JSON.stringify(dailyData.slice(-14).map(d => `${d.date}:${d.minutes}m`))}
 
-Give personalized advice.`;
+Give personalized advice. Use markdown formatting with bullet points and bold for key recommendations.`;
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 60000);
@@ -147,12 +205,19 @@ Give personalized advice.`;
 
     const result = await response.json();
     const advice = result.response || 'No advice available at this time.';
-    const generatedAt = new Date().toISOString();
+    const generatedAt = new Date();
+    const expiresAt = new Date(generatedAt.getTime() + cacheDurationMs);
 
-    // Cache the result
-    aiCache.set(cacheKey, { advice, generatedAt, cachedAt: Date.now() });
+    // Persist to DB cache (upsert)
+    await AiAdviceCache.findOneAndUpdate(
+      { userId, context },
+      { advice, generatedAt, expiresAt },
+      { upsert: true }
+    );
 
-    res.json({ advice, generatedAt, cached: false });
+    const nextRefreshAt = new Date(generatedAt.getTime() + cooldownMs).toISOString();
+
+    res.json({ advice, generatedAt: generatedAt.toISOString(), cached: false, nextRefreshAt });
   } catch (err) {
     if (err.name === 'AbortError') {
       return res.status(504).json({ error: 'AI request timed out' });

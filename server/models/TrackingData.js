@@ -9,6 +9,8 @@ const trackingDataSchema = new mongoose.Schema({
     end: Date,
     duration: Number,
   }],
+  manualOverride: { type: Boolean, default: false },
+  originalSeconds: { type: Number, default: null },
 }, { timestamps: true });
 
 trackingDataSchema.index({ userId: 1, date: 1 }, { unique: true });

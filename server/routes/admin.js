@@ -12,6 +12,7 @@ const AuditLog = require('../models/AuditLog');
 const Friendship = require('../models/Friendship');
 const Group = require('../models/Group');
 const DailyGoalOverride = require('../models/DailyGoalOverride');
+const { recalcUserStats } = require('../utils/recalcStats');
 const logger = require('../utils/logger');
 const { sendVerificationEmail, resetTransporter, testSmtpConnection } = require('../utils/email');
 const { getJwtSecret, getAppConfig, invalidateCache, getEffectiveGoalMinutes } = require('../utils/settings');
@@ -23,56 +24,7 @@ const adminRoles = ['admin', 'super_admin'];
 
 router.use(authenticate, softBanCheck, lastActiveTouch);
 
-// ─── Helper: recalc user stats after tracking mutation ───
-async function recalcUserStats(userId) {
-  const user = await User.findOne({ userId });
-  if (!user) return;
-  const allData = await TrackingData.find({ userId });
-  const totalSeconds = allData.reduce((sum, d) => sum + d.seconds, 0);
-  const defaultGoal = await getEffectiveGoalMinutes(user);
-  const defaultGoalSeconds = defaultGoal * 60;
-
-  // Load per-day overrides for this user
-  const overrides = await DailyGoalOverride.find({ userId });
-  const overrideMap = {};
-  overrides.forEach(o => { overrideMap[o.date] = o.goalMinutes * 60; });
-
-  const getGoalSecondsForDate = (date) => overrideMap[date] || defaultGoalSeconds;
-
-  const totalDays = allData.filter(d => d.seconds >= getGoalSecondsForDate(d.date)).length;
-  const dataMap = {};
-  allData.forEach(d => { dataMap[d.date] = d.seconds; });
-  const sorted = allData.map(d => d.date).sort().reverse();
-
-  // Walk backward from today, checking every calendar day
-  let currentStreak = 0;
-  const todayDate = new Date();
-  for (let i = 0; i < 3650; i++) {
-    const d = new Date(todayDate);
-    d.setDate(d.getDate() - i);
-    const dateStr = d.toISOString().slice(0, 10);
-    if ((dataMap[dateStr] || 0) >= getGoalSecondsForDate(dateStr)) currentStreak++;
-    else break;
-  }
-
-  let bestStreak = 0, run = 0;
-  if (sorted.length > 0) {
-    const firstDate = new Date(sorted[sorted.length - 1] + 'T00:00:00');
-    const lastDate = new Date(sorted[0] + 'T00:00:00');
-    for (let d = new Date(firstDate); d <= lastDate; d.setDate(d.getDate() + 1)) {
-      const dateStr = d.toISOString().slice(0, 10);
-      if ((dataMap[dateStr] || 0) >= getGoalSecondsForDate(dateStr)) { run++; bestStreak = Math.max(bestStreak, run); }
-      else run = 0;
-    }
-  }
-  const hours = totalSeconds / 3600;
-  const levels = [0, 5, 15, 30, 60, 100, 200, 500, 1000, 2000];
-  let level = 1;
-  for (let i = levels.length - 1; i >= 0; i--) {
-    if (hours >= levels[i]) { level = i + 1; break; }
-  }
-  await User.updateOne({ userId }, { totalStandingSeconds: totalSeconds, totalDays, currentStreak, bestStreak, level });
-}
+// recalcUserStats imported from ../utils/recalcStats
 
 // ─── Enhanced Global Stats ───
 router.get('/stats', requireRole(...adminRoles), async (req, res) => {
@@ -400,7 +352,14 @@ router.put('/tracking/:userId/:date', requireRole(...adminRoles), async (req, re
     const before = await TrackingData.findOne({ userId: req.params.userId, date: req.params.date });
 
     const update = {};
-    if (seconds != null) update.seconds = seconds;
+    if (seconds != null) {
+      update.seconds = seconds;
+      update.manualOverride = true;
+      // Preserve original timer value on first admin override
+      if (before && !before.manualOverride && before.originalSeconds == null) {
+        update.originalSeconds = before.seconds;
+      }
+    }
     if (sessions) update.sessions = sessions;
 
     await TrackingData.findOneAndUpdate(
@@ -444,6 +403,35 @@ router.delete('/tracking/:userId/:date', requireRole(...adminRoles), async (req,
     res.json({ message: 'Tracking record deleted' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete tracking data' });
+  }
+});
+
+// Reset manual override to original timer value
+router.delete('/tracking/:userId/:date/override', requireRole(...adminRoles), async (req, res) => {
+  try {
+    const record = await TrackingData.findOne({ userId: req.params.userId, date: req.params.date });
+    if (!record) return res.status(404).json({ error: 'Record not found' });
+    if (!record.manualOverride) return res.status(400).json({ error: 'No manual override to reset' });
+
+    const beforeSeconds = record.seconds;
+    record.seconds = record.originalSeconds != null ? record.originalSeconds : record.seconds;
+    record.manualOverride = false;
+    record.originalSeconds = null;
+    await record.save();
+
+    await recalcUserStats(req.params.userId);
+
+    await AuditLog.create({
+      actorId: req.impersonator?.userId || req.user.userId,
+      actorRole: req.impersonator?.role || req.user.role,
+      targetId: req.params.userId, action: 'data_override_reset',
+      details: { date: req.params.date, before: beforeSeconds, after: record.seconds },
+      ip: req.ip,
+    });
+
+    res.json({ message: 'Override reset', seconds: record.seconds });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to reset override' });
   }
 });
 
@@ -839,7 +827,11 @@ router.get('/users/:userId/daily-times', requireRole(...adminRoles), async (req,
       date: { $gte: startStr, $lte: endStr },
     });
     const trackingMap = {};
-    tracking.forEach(d => { trackingMap[d.date] = d.seconds; });
+    const manualOverrideMap = {};
+    tracking.forEach(d => {
+      trackingMap[d.date] = d.seconds;
+      if (d.manualOverride) manualOverrideMap[d.date] = true;
+    });
 
     // Get all overrides in range
     const overrides = await DailyGoalOverride.find({
@@ -854,6 +846,7 @@ router.get('/users/:userId/daily-times', requireRole(...adminRoles), async (req,
       username: user.username,
       defaultGoalMinutes: effectiveGoal,
       trackingMap,
+      manualOverrideMap,
       overrideMap,
       startDate: startStr,
       endDate: endStr,

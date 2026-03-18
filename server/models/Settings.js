@@ -57,6 +57,8 @@ const DEFAULTS = {
   ollamaModel: { value: '', description: 'Active Ollama model name for AI features', section: 'ai' },
   defaultAiSystemPrompt: { value: '', description: 'System prompt for AI advisor (applies to all users)', section: 'ai' },
   defaultAiMaxTokens: { value: 500, description: 'Max response tokens for AI advisor (100-2000, applies to all users)', section: 'ai' },
+  aiAdviceCooldownMinutes: { value: 30, description: 'Minimum minutes between AI advice refresh requests per user (1-1440)', section: 'ai' },
+  aiAdviceCacheDurationMinutes: { value: 30, description: 'Duration in minutes to cache AI advice per user before fetching fresh (1-1440)', section: 'ai' },
 
   // Enforcement
   masterDailyGoalMinutes: { value: 60, description: 'Master daily time goal for all users (minutes)', section: 'enforcement' },
