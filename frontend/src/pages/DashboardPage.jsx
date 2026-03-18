@@ -1,5 +1,8 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import { BarChart3, Calendar, TrendingUp, Brain, Sparkles, RefreshCw, Clock } from 'lucide-react';
+import {
+  BarChart3, Calendar, TrendingUp, Brain, Sparkles, RefreshCw, Clock,
+  Award, Target, Flame, ArrowUpRight, ArrowDownRight, Minus, Zap, Trophy
+} from 'lucide-react';
 import { Bar } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -50,9 +53,24 @@ function CooldownTimer({ nextRefreshAt, onReady }) {
   );
 }
 
+function formatHm(secs) {
+  if (!secs || secs <= 0) return '0m';
+  const h = Math.floor(secs / 3600);
+  const m = Math.round((secs % 3600) / 60);
+  if (h > 0) return m > 0 ? `${h}h ${m}m` : `${h}h`;
+  return `${m}m`;
+}
+
+function ChangeIndicator({ value }) {
+  if (value === 0) return <span className="text-zen-500 flex items-center gap-0.5"><Minus size={10} /> 0%</span>;
+  if (value > 0) return <span className="text-accent-400 flex items-center gap-0.5"><ArrowUpRight size={10} /> +{value}%</span>;
+  return <span className="text-danger-400 flex items-center gap-0.5"><ArrowDownRight size={10} /> {value}%</span>;
+}
+
 export default function DashboardPage() {
   const [tracking, setTracking] = useState({});
   const [stats, setStats] = useState(null);
+  const [extStats, setExtStats] = useState(null);
   const [aiAdvice, setAiAdvice] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [cooldownActive, setCooldownActive] = useState(false);
@@ -64,9 +82,11 @@ export default function DashboardPage() {
     Promise.all([
       api(`/api/tracking?from=${from}&to=${to}`),
       api('/api/stats'),
-    ]).then(([t, s]) => {
+      api('/api/stats/extended'),
+    ]).then(([t, s, e]) => {
       setTracking(t);
       setStats(s);
+      setExtStats(e);
     }).catch(() => {});
   }, []);
 
@@ -97,7 +117,6 @@ export default function DashboardPage() {
       setAiAdvice(data);
       if (data.nextRefreshAt) setCooldownActive(true);
     } catch (err) {
-      // 429 = cooldown, show returned cached advice
       if (err.status === 429 && err.data?.advice) {
         setAiAdvice(err.data);
         setCooldownActive(true);
@@ -163,6 +182,10 @@ export default function DashboardPage() {
     return () => clearInterval(id);
   }, [aiAdvice?.generatedAt]);
 
+  const pr = extStats?.personalRecords;
+  const prog = extStats?.progress;
+  const goals = extStats?.goals;
+
   return (
     <div className="space-y-6">
       <h2 className="text-xl font-bold text-zen-100">Dashboard</h2>
@@ -227,12 +250,12 @@ export default function DashboardPage() {
             <GitHubHeatmap data={tracking} darkMode={true} />
           </BentoCard>
 
-          {/* Stats summary */}
+          {/* Quick Stats summary */}
           {(stats || user) && (
             <BentoGrid>
               <BentoCard>
                 <p className="text-xs text-zen-500">Total Tracked</p>
-                <p className="text-2xl font-bold text-zen-100 mt-1">{formatMinutes(user?.totalStandingSeconds ?? stats?.totalStandingSeconds ?? 0)} min</p>
+                <p className="text-2xl font-bold text-zen-100 mt-1">{formatHm(user?.totalStandingSeconds ?? stats?.totalStandingSeconds ?? 0)}</p>
               </BentoCard>
               <BentoCard>
                 <p className="text-xs text-zen-500">Active Days</p>
@@ -242,11 +265,120 @@ export default function DashboardPage() {
                 <p className="text-xs text-zen-500">Avg / Active Day</p>
                 <p className="text-2xl font-bold text-zen-100 mt-1">
                   {(user?.totalDays ?? stats?.totalDays)
-                    ? formatMinutes(Math.round((user?.totalStandingSeconds ?? stats?.totalStandingSeconds ?? 0) / (user?.totalDays ?? stats?.totalDays)))
-                    : 0} min
+                    ? formatHm(Math.round((user?.totalStandingSeconds ?? stats?.totalStandingSeconds ?? 0) / (user?.totalDays ?? stats?.totalDays)))
+                    : '0m'}
                 </p>
               </BentoCard>
             </BentoGrid>
+          )}
+
+          {/* ── Personal Records ── */}
+          {pr && (
+            <div>
+              <h3 className="text-sm font-semibold text-zen-300 mb-3 flex items-center gap-2">
+                <Trophy size={14} className="text-accent-400" /> Personal Records
+              </h3>
+              <BentoGrid>
+                <BentoCard>
+                  <p className="text-xs text-zen-500">Longest Session</p>
+                  <p className="text-xl font-bold text-zen-100 mt-1">{pr.longestSession ? formatHm(pr.longestSession.seconds) : '—'}</p>
+                  {pr.longestSession && <p className="text-[10px] text-zen-500 mt-0.5">{pr.longestSession.date}</p>}
+                </BentoCard>
+                <BentoCard>
+                  <p className="text-xs text-zen-500">Best Day</p>
+                  <p className="text-xl font-bold text-zen-100 mt-1">{pr.bestDay ? formatHm(pr.bestDay.seconds) : '—'}</p>
+                  {pr.bestDay && <p className="text-[10px] text-zen-500 mt-0.5">{pr.bestDay.date}</p>}
+                </BentoCard>
+                <BentoCard>
+                  <p className="text-xs text-zen-500">Best Week</p>
+                  <p className="text-xl font-bold text-zen-100 mt-1">{pr.bestWeek ? formatHm(pr.bestWeek.seconds) : '—'}</p>
+                  {pr.bestWeek && <p className="text-[10px] text-zen-500 mt-0.5">Week of {pr.bestWeek.weekStart}</p>}
+                </BentoCard>
+                <BentoCard>
+                  <p className="text-xs text-zen-500">Best Month</p>
+                  <p className="text-xl font-bold text-zen-100 mt-1">{pr.bestMonth ? formatHm(pr.bestMonth.seconds) : '—'}</p>
+                  {pr.bestMonth && <p className="text-[10px] text-zen-500 mt-0.5">{pr.bestMonth.month}</p>}
+                </BentoCard>
+                <BentoCard>
+                  <p className="text-xs text-zen-500">Total Sessions</p>
+                  <p className="text-xl font-bold text-zen-100 mt-1">{pr.totalSessions}</p>
+                  <p className="text-[10px] text-zen-500 mt-0.5">Avg: {formatHm(pr.avgSessionDuration)}</p>
+                </BentoCard>
+                <BentoCard>
+                  <p className="text-xs text-zen-500">Total Standing Time</p>
+                  <p className="text-xl font-bold text-zen-100 mt-1">{formatHm(pr.totalSeconds)}</p>
+                </BentoCard>
+              </BentoGrid>
+            </div>
+          )}
+
+          {/* ── Progress & Trends ── */}
+          {prog && (
+            <div>
+              <h3 className="text-sm font-semibold text-zen-300 mb-3 flex items-center gap-2">
+                <TrendingUp size={14} className="text-accent-400" /> Progress & Trends
+              </h3>
+              <BentoGrid>
+                <BentoCard className="md:col-span-2">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs text-zen-500">Level {prog.level}{prog.nextLevel ? ` → ${prog.nextLevel}` : ' (Max)'}</p>
+                    <p className="text-xs text-zen-400">{prog.totalHours}h total</p>
+                  </div>
+                  <div className="w-full bg-zen-800 rounded-full h-3">
+                    <div
+                      className="bg-accent-500 h-3 rounded-full transition-all duration-500"
+                      style={{ width: `${prog.levelProgress}%` }}
+                    />
+                  </div>
+                  <div className="flex justify-between mt-1">
+                    <span className="text-[10px] text-zen-600">{prog.currentLevelHours}h</span>
+                    {prog.nextLevelHours && <span className="text-[10px] text-zen-600">{prog.nextLevelHours}h</span>}
+                  </div>
+                </BentoCard>
+                <BentoCard>
+                  <p className="text-xs text-zen-500">Week over Week</p>
+                  <div className="text-xl font-bold mt-1"><ChangeIndicator value={prog.weekOverWeekChange} /></div>
+                </BentoCard>
+                <BentoCard>
+                  <p className="text-xs text-zen-500">Month over Month</p>
+                  <div className="text-xl font-bold mt-1"><ChangeIndicator value={prog.monthOverMonthChange} /></div>
+                </BentoCard>
+                <BentoCard>
+                  <p className="text-xs text-zen-500">Consistency (30d)</p>
+                  <p className="text-xl font-bold text-zen-100 mt-1">{prog.consistencyScore}%</p>
+                  <p className="text-[10px] text-zen-500 mt-0.5">Days goal met in last 30</p>
+                </BentoCard>
+              </BentoGrid>
+            </div>
+          )}
+
+          {/* ── Goal Tracking ── */}
+          {goals && (
+            <div>
+              <h3 className="text-sm font-semibold text-zen-300 mb-3 flex items-center gap-2">
+                <Target size={14} className="text-accent-400" /> Goal Tracking
+              </h3>
+              <BentoGrid>
+                <BentoCard>
+                  <p className="text-xs text-zen-500">Daily Goal</p>
+                  <p className="text-xl font-bold text-zen-100 mt-1">{goals.dailyGoalMinutes} min</p>
+                  {goals.enforced && <p className="text-[10px] text-warn-400 mt-0.5">Admin-enforced</p>}
+                </BentoCard>
+                <BentoCard>
+                  <p className="text-xs text-zen-500">Goal Met This Week</p>
+                  <p className="text-xl font-bold text-zen-100 mt-1">{goals.goalMetThisWeek} / 7</p>
+                </BentoCard>
+                <BentoCard>
+                  <p className="text-xs text-zen-500">Goal Met This Month</p>
+                  <p className="text-xl font-bold text-zen-100 mt-1">{goals.goalMetThisMonth}</p>
+                </BentoCard>
+                <BentoCard>
+                  <p className="text-xs text-zen-500">All-Time Completion</p>
+                  <p className="text-xl font-bold text-zen-100 mt-1">{goals.goalCompletionRate}%</p>
+                  <p className="text-[10px] text-zen-500 mt-0.5">{goals.daysGoalMet} / {goals.daysTracked} days</p>
+                </BentoCard>
+              </BentoGrid>
+            </div>
           )}
         </div>
 

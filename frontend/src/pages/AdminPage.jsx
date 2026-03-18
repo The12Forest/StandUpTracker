@@ -5,13 +5,12 @@ import {
   Search, RefreshCw, Eye, EyeOff, Sliders, UserCheck, Calendar,
   Trash2, Lock, Unlock, KeyRound, MailCheck, Ban, HardDrive,
   Cpu, Clock, Database, TrendingUp, Globe, MailX, UsersRound, Mail,
-  Brain, Info, BarChart3, Heart, UserPlus
+  Brain, Info, BarChart3, Heart, UserPlus, Flame, Wifi, Zap
 } from 'lucide-react';
 import { Bar } from 'react-chartjs-2';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip as ChartTooltip, Legend } from 'chart.js';
 import { api } from '../lib/api';
 import { BentoCard, BentoGrid, StatCard } from '../components/BentoCard';
-import useSocketStore from '../stores/useSocketStore';
 import useToastStore from '../stores/useToastStore';
 import useAuthStore from '../stores/useAuthStore';
 
@@ -61,17 +60,19 @@ export default function AdminPage() {
 
 function OverviewTab() {
   const [stats, setStats] = useState(null);
-  const connectionCount = useSocketStore((s) => s.connectionCount);
 
+  const loadStats = () => { api('/api/admin/stats').then(setStats).catch(() => {}); };
   useEffect(() => {
-    api('/api/admin/stats').then(setStats).catch(() => {});
+    loadStats();
+    const id = setInterval(loadStats, 30000);
+    return () => clearInterval(id);
   }, []);
 
   if (!stats) return <div className="text-zen-500">Loading...</div>;
 
   const formatBytes = (bytes) => {
     if (!bytes) return '0 B';
-    const units = ['B', 'KB', 'MB', 'GB'];
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
     let i = 0;
     let val = bytes;
     while (val >= 1024 && i < units.length - 1) { val /= 1024; i++; }
@@ -87,50 +88,101 @@ function OverviewTab() {
     return `${m}m`;
   };
 
+  const formatHours = (secs) => {
+    const h = Math.floor(secs / 3600);
+    const m = Math.round((secs % 3600) / 60);
+    return h > 0 ? `${h}h ${m}m` : `${m}m`;
+  };
+
+  const pct = (a, b) => b > 0 ? Math.round((a / b) * 100) : 0;
+
   return (
     <div className="space-y-6">
-      {/* User Stats */}
+      {/* System Health */}
       <div>
-        <h3 className="text-sm font-semibold text-zen-300 mb-3 flex items-center gap-2"><Users size={14} /> User Statistics</h3>
+        <h3 className="text-sm font-semibold text-zen-300 mb-3 flex items-center gap-2"><Server size={14} /> System Health</h3>
+        <BentoGrid>
+          <StatCard label="CPU Usage" value={`${stats.server?.cpuPercent || 0}%`} icon={Cpu}
+            sub={`5m avg: ${stats.server?.cpuAvg5m || 0}% · ${stats.server?.cpus || 0} cores`} />
+          <StatCard label="System RAM" value={`${pct(stats.server?.usedRAM, stats.server?.totalRAM)}%`} icon={HardDrive}
+            sub={`${formatBytes(stats.server?.usedRAM)} / ${formatBytes(stats.server?.totalRAM)}`} />
+          <StatCard label="Disk Usage" value={stats.server?.diskTotal ? `${pct(stats.server.diskUsed, stats.server.diskTotal)}%` : 'N/A'} icon={Database}
+            sub={stats.server?.diskTotal ? `${formatBytes(stats.server.diskUsed)} / ${formatBytes(stats.server.diskTotal)}` : 'Unavailable'} />
+          <StatCard label="Uptime" value={formatUptime(stats.server?.uptime || 0)} icon={Clock}
+            sub={`Node ${stats.server?.nodeVersion || ''} · ${stats.server?.platform || ''}`} />
+          <StatCard label="Process Memory" value={formatBytes(stats.server?.memoryRSS || 0)} icon={Zap}
+            sub={`Heap: ${formatBytes(stats.server?.memoryHeap || 0)} / ${formatBytes(stats.server?.memoryHeapTotal || 0)}`} />
+          <StatCard label="WebSocket Connections" value={stats.server?.wsConnections || 0} icon={Wifi}
+            sub={`${stats.server?.onlineUsers || 0} unique users online`} />
+          <StatCard label="Database Size" value={formatBytes(stats.server?.dbSizeBytes || 0)} icon={Database}
+            sub={`${stats.logs?.total || 0} log entries`} />
+        </BentoGrid>
+      </div>
+
+      {/* Application Activity */}
+      <div>
+        <h3 className="text-sm font-semibold text-zen-300 mb-3 flex items-center gap-2"><Activity size={14} /> Application Activity</h3>
+        <BentoGrid>
+          <StatCard label="Total Sessions" value={stats.tracking?.totalSessions || 0} icon={TrendingUp}
+            sub={`${stats.tracking?.totalRecords || 0} tracking records`} />
+          <StatCard label="Total Standing Time" value={formatHours(stats.tracking?.totalSeconds || 0)} icon={Clock}
+            sub="Across all users, all time" />
+          <StatCard label="Avg Daily / User" value={`${stats.tracking?.avgDailyMinutesAllUsers || 0} min`} icon={Calendar}
+            sub={`${stats.tracking?.activeToday || 0} users active today`} />
+          <StatCard label="Sessions Today" value={stats.tracking?.sessionsStartedToday || 0} icon={Activity}
+            sub={`${stats.tracking?.sessionsCompletedToday || 0} completed`} />
+          <StatCard label="AI Advice Requests" value={stats.tracking?.aiRequestsTotal || 0} icon={Brain}
+            sub={`${stats.tracking?.aiRequestsToday || 0} today`} />
+        </BentoGrid>
+      </div>
+
+      {/* User Engagement */}
+      <div>
+        <h3 className="text-sm font-semibold text-zen-300 mb-3 flex items-center gap-2"><Users size={14} /> User Engagement</h3>
         <BentoGrid>
           <StatCard label="Total Users" value={stats.users?.total || 0} icon={Users}
-            sub={`${stats.users?.registrationsThisWeek || 0} this week / ${stats.users?.registrationsThisMonth || 0} this month`} />
-          <StatCard label="Active Users" value={stats.users?.active || 0} icon={Activity}
-            sub={`${stats.users?.blocked || 0} blocked`} />
-          <StatCard label="Verified Emails" value={stats.users?.verified || 0} icon={MailCheck}
-            sub={`${(stats.users?.total || 0) - (stats.users?.verified || 0)} unverified`} />
-          <StatCard label="2FA Enabled" value={(stats.users?.totpEnabled || 0) + (stats.users?.email2faEnabled || 0)} icon={Shield}
-            sub={`${stats.users?.totpEnabled || 0} TOTP / ${stats.users?.email2faEnabled || 0} Email`} />
-          <StatCard label="Roles" value={`${stats.users?.admins || 0} admins`} icon={UserCheck}
-            sub={`${stats.users?.superAdmins || 0} super / ${stats.users?.moderators || 0} mods`} />
-          <StatCard label="WebSocket Clients" value={connectionCount} icon={Globe} />
-        </BentoGrid>
-      </div>
-
-      {/* Tracking Stats */}
-      <div>
-        <h3 className="text-sm font-semibold text-zen-300 mb-3 flex items-center gap-2"><TrendingUp size={14} /> Tracking Statistics</h3>
-        <BentoGrid>
-          <StatCard label="Total Records" value={stats.tracking?.totalRecords || 0} icon={Database}
-            sub={`${Math.round((stats.tracking?.totalSeconds || 0) / 3600)}h total tracked`} />
+            sub={`${stats.users?.active || 0} active · ${stats.users?.blocked || 0} blocked`} />
           <StatCard label="Active Today" value={stats.tracking?.activeToday || 0} icon={Activity}
-            sub={`${stats.tracking?.activeYesterday || 0} yesterday`} />
-          <StatCard label="Avg Daily (all)" value={`${stats.tracking?.avgDailyMinutesAllUsers || 0} min`} icon={Calendar} />
+            sub={`${stats.tracking?.activeYesterday || 0} yesterday · ${stats.users?.activeThisWeek || 0} this week`} />
+          <StatCard label="New Registrations" value={stats.users?.registrationsThisWeek || 0} icon={UserPlus}
+            sub={`This week · ${stats.users?.registrationsThisMonth || 0} this month`} />
+          <StatCard label="2FA Enabled" value={stats.users?.twoFaTotal || 0} icon={Shield}
+            sub={`${pct(stats.users?.twoFaTotal, stats.users?.total)}% · ${stats.users?.totpEnabled || 0} TOTP / ${stats.users?.email2faEnabled || 0} Email`} />
+          <StatCard label="Verified Emails" value={stats.users?.verified || 0} icon={MailCheck}
+            sub={`${pct(stats.users?.verified, stats.users?.total)}% of all users`} />
+          <StatCard label="Online Now" value={stats.server?.onlineUsers || 0} icon={Globe}
+            sub={`${stats.server?.wsConnections || 0} connections`} />
         </BentoGrid>
+        {/* Registration sparkline */}
+        {stats.users?.regSparkline?.length > 0 && (
+          <BentoCard className="mt-4">
+            <p className="text-xs text-zen-400 mb-3">New Registrations (Last 7 Days)</p>
+            <div className="flex items-end gap-1 h-16">
+              {stats.users.regSparkline.map((d) => {
+                const max = Math.max(...stats.users.regSparkline.map(x => x.count), 1);
+                const h = Math.max(4, (d.count / max) * 100);
+                return (
+                  <div key={d.date} className="flex-1 flex flex-col items-center gap-1">
+                    <div className="w-full bg-accent-500/60 rounded-sm" style={{ height: `${h}%` }} title={`${d.date}: ${d.count}`} />
+                    <span className="text-[8px] text-zen-600">{d.date.slice(5)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </BentoCard>
+        )}
       </div>
 
-      {/* Server Stats */}
+      {/* Streak Statistics */}
       <div>
-        <h3 className="text-sm font-semibold text-zen-300 mb-3 flex items-center gap-2"><Server size={14} /> Server</h3>
+        <h3 className="text-sm font-semibold text-zen-300 mb-3 flex items-center gap-2"><Flame size={14} /> Streak Statistics</h3>
         <BentoGrid>
-          <StatCard label="Uptime" value={formatUptime(stats.server?.uptime || 0)} icon={Clock}
-            sub={`Node ${stats.server?.nodeVersion || ''}`} />
-          <StatCard label="System RAM" value={formatBytes(stats.server?.usedRAM || 0)} icon={HardDrive}
-            sub={`${formatBytes(stats.server?.freeRAM || 0)} free / ${formatBytes(stats.server?.totalRAM || 0)} total`} />
-          <StatCard label="Process Memory" value={formatBytes(stats.server?.memoryRSS || 0)} icon={Cpu}
-            sub={`Heap: ${formatBytes(stats.server?.memoryHeap || 0)} / ${formatBytes(stats.server?.memoryHeapTotal || 0)}`} />
-          <StatCard label="Platform" value={stats.server?.platform || 'N/A'} icon={Server}
-            sub={`${stats.server?.cpus || 0} CPUs`} />
+          <StatCard label="Active Personal Streaks" value={stats.streaks?.activePersonal || 0} icon={Flame}
+            sub={`Avg length: ${stats.streaks?.avgLength || 0} days`} />
+          <StatCard label="Longest Personal Streak" value={stats.streaks?.longestPersonal ? `${stats.streaks.longestPersonal.days}d` : '—'} icon={TrendingUp}
+            sub={stats.streaks?.longestPersonal?.username || 'No streaks yet'} />
+          <StatCard label="Active Friend Streaks" value={stats.streaks?.activeFriend || 0} icon={Heart} />
+          <StatCard label="Active Group Streaks" value={stats.streaks?.activeGroup || 0} icon={UsersRound} />
         </BentoGrid>
       </div>
 

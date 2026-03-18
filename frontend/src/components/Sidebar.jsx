@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { Timer, BarChart3, Trophy, Settings, Shield, LogOut, Menu, X, Users, UsersRound, Flame, Clock } from 'lucide-react';
+import { Timer, BarChart3, Trophy, Settings, Shield, LogOut, Menu, X, Users, UsersRound, Flame } from 'lucide-react';
 import { useState } from 'react';
 import useAuthStore from '../stores/useAuthStore';
 import useSocketStore from '../stores/useSocketStore';
@@ -11,7 +11,6 @@ const NAV_ITEMS = [
   { to: '/friends', icon: Users, label: 'Friends' },
   { to: '/groups', icon: UsersRound, label: 'Groups' },
   { to: '/streaks', icon: Flame, label: 'Streaks' },
-  { to: '/my-time', icon: Clock, label: 'My Time' },
   { to: '/settings', icon: Settings, label: 'Settings' },
 ];
 

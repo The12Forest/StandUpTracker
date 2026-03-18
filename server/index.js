@@ -102,7 +102,7 @@ app.use('/api/ai', aiRoutes);
 app.use('/api/notifications', notificationRoutes);
 
 // SPA fallback — serve index.html for all client routes
-const spaPages = ['/app', '/login', '/register', '/admin', '/admin/*', '/leaderboard', '/settings', '/dashboard', '/friends', '/groups', '/streaks', '/setup', '/2fa-setup', '/my-time'];
+const spaPages = ['/app', '/login', '/register', '/admin', '/admin/*', '/leaderboard', '/settings', '/dashboard', '/friends', '/groups', '/streaks', '/setup', '/2fa-setup'];
 spaPages.forEach(route => {
   app.get(route, (req, res) => {
     if (fs.existsSync(reactDist)) {

@@ -12,6 +12,8 @@ const AuditLog = require('../models/AuditLog');
 const Friendship = require('../models/Friendship');
 const Group = require('../models/Group');
 const DailyGoalOverride = require('../models/DailyGoalOverride');
+const FriendStreak = require('../models/FriendStreak');
+const AiAdviceCache = require('../models/AiAdviceCache');
 const { recalcUserStats } = require('../utils/recalcStats');
 const logger = require('../utils/logger');
 const { sendVerificationEmail, resetTransporter, testSmtpConnection } = require('../utils/email');
@@ -26,28 +28,101 @@ router.use(authenticate, softBanCheck, lastActiveTouch);
 
 // recalcUserStats imported from ../utils/recalcStats
 
+// ─── CPU usage tracking for averaged stats ───
+let cpuUsageCache = { current: 0, samples: [], lastMeasured: 0 };
+function measureCpuUsage() {
+  const cpus = os.cpus();
+  let totalIdle = 0, totalTick = 0;
+  for (const cpu of cpus) {
+    for (const type in cpu.times) totalTick += cpu.times[type];
+    totalIdle += cpu.times.idle;
+  }
+  return { idle: totalIdle / cpus.length, total: totalTick / cpus.length };
+}
+let prevCpu = measureCpuUsage();
+setInterval(() => {
+  const curr = measureCpuUsage();
+  const idleDiff = curr.idle - prevCpu.idle;
+  const totalDiff = curr.total - prevCpu.total;
+  const pct = totalDiff > 0 ? Math.round((1 - idleDiff / totalDiff) * 100) : 0;
+  cpuUsageCache.current = pct;
+  cpuUsageCache.samples.push(pct);
+  if (cpuUsageCache.samples.length > 30) cpuUsageCache.samples.shift(); // 5min of 10s samples
+  prevCpu = curr;
+}, 10000);
+
 // ─── Enhanced Global Stats ───
 router.get('/stats', requireRole(...adminRoles), async (req, res) => {
   try {
-    const totalUsers = await User.countDocuments();
-    const activeUsers = await User.countDocuments({ active: true });
-    const verifiedUsers = await User.countDocuments({ emailVerified: true });
-    const totalRecords = await TrackingData.countDocuments();
-    const memUsage = process.memoryUsage();
-
-    const pipeline = await TrackingData.aggregate([
-      { $group: { _id: null, totalSeconds: { $sum: '$seconds' }, totalRecords: { $sum: 1 } } },
-    ]);
-    const totalTrackingSeconds = pipeline[0]?.totalSeconds || 0;
-
-    // Enhanced analytics
+    const today = new Date().toISOString().slice(0, 10);
     const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7);
     const monthAgo = new Date(); monthAgo.setMonth(monthAgo.getMonth() - 1);
-    const registrationsThisWeek = await User.countDocuments({ createdAt: { $gte: weekAgo } });
-    const registrationsThisMonth = await User.countDocuments({ createdAt: { $gte: monthAgo } });
+    const yesterdayStr = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
 
-    const today = new Date().toISOString().slice(0, 10);
-    const activeToday = await TrackingData.countDocuments({ date: today });
+    // ── System Health ──
+    const memUsage = process.memoryUsage();
+    const totalRAM = os.totalmem();
+    const freeRAM = os.freemem();
+    const usedRAM = totalRAM - freeRAM;
+    const cpuPercent = cpuUsageCache.current;
+    const cpuAvg5m = cpuUsageCache.samples.length > 0
+      ? Math.round(cpuUsageCache.samples.reduce((a, b) => a + b, 0) / cpuUsageCache.samples.length)
+      : cpuPercent;
+
+    // Disk usage (app data directory)
+    let diskUsed = 0, diskTotal = 0;
+    try {
+      const { execSync } = require('child_process');
+      if (os.platform() === 'win32') {
+        const drive = process.cwd().slice(0, 2);
+        const out = execSync(`wmic logicaldisk where "DeviceID='${drive}'" get Size,FreeSpace /format:csv`, { encoding: 'utf8' });
+        const parts = out.trim().split('\n').pop().split(',');
+        const freeSpace = parseInt(parts[1]) || 0;
+        const totalSpace = parseInt(parts[2]) || 0;
+        diskTotal = totalSpace;
+        diskUsed = totalSpace - freeSpace;
+      } else {
+        const out = execSync(`df -B1 ${process.cwd()} | tail -1`, { encoding: 'utf8' });
+        const parts = out.trim().split(/\s+/);
+        diskTotal = parseInt(parts[1]) || 0;
+        diskUsed = parseInt(parts[2]) || 0;
+      }
+    } catch { /* disk stats unavailable */ }
+
+    // WebSocket connections
+    const io = req.app.get('io');
+    const wsConnections = io ? io.engine.clientsCount : 0;
+
+    // Unique online users
+    let onlineUserIds = new Set();
+    if (io) {
+      const sockets = await io.fetchSockets();
+      for (const s of sockets) {
+        if (s.data?.userId) onlineUserIds.add(s.data.userId);
+      }
+    }
+
+    // DB size
+    let dbSizeBytes = 0;
+    try {
+      const mongoose = require('mongoose');
+      const dbStats = await mongoose.connection.db.stats();
+      dbSizeBytes = dbStats.dataSize + (dbStats.indexSize || 0);
+    } catch { /* db stats unavailable */ }
+
+    // ── Application Activity ──
+    const trackingAgg = await TrackingData.aggregate([
+      { $group: { _id: null, totalSeconds: { $sum: '$seconds' }, totalRecords: { $sum: 1 } } },
+    ]);
+    const totalTrackingSeconds = trackingAgg[0]?.totalSeconds || 0;
+    const totalRecords = trackingAgg[0]?.totalRecords || 0;
+
+    // Total sessions (sum of sessions array lengths)
+    const sessionCountAgg = await TrackingData.aggregate([
+      { $project: { sessionCount: { $size: { $ifNull: ['$sessions', []] } } } },
+      { $group: { _id: null, total: { $sum: '$sessionCount' } } },
+    ]);
+    const totalSessions = sessionCountAgg[0]?.total || totalRecords;
 
     const avgPipeline = await TrackingData.aggregate([
       { $group: { _id: '$userId', total: { $sum: '$seconds' }, days: { $sum: 1 } } },
@@ -55,18 +130,30 @@ router.get('/stats', requireRole(...adminRoles), async (req, res) => {
     ]);
     const avgDailyMinutesAllUsers = Math.round((avgPipeline[0]?.avgDaily || 0) / 60);
 
-    const topUsers = await User.find({ active: true })
-      .sort({ totalStandingSeconds: -1 }).limit(5)
-      .select('userId username totalStandingSeconds level');
+    const activeToday = await TrackingData.countDocuments({ date: today });
+    const activeYesterday = await TrackingData.countDocuments({ date: yesterdayStr });
 
-    const totalLogs = await Log.countDocuments();
+    // Sessions started/completed today
+    const todayRecords = await TrackingData.find({ date: today }).select('sessions');
+    let sessionsStartedToday = 0, sessionsCompletedToday = 0;
+    for (const rec of todayRecords) {
+      const sess = rec.sessions || [];
+      sessionsStartedToday += sess.length;
+      sessionsCompletedToday += sess.filter(s => s.end).length;
+    }
 
-    // System RAM stats
-    const totalRAM = os.totalmem();
-    const freeRAM = os.freemem();
-    const usedRAM = totalRAM - freeRAM;
+    // AI advice stats
+    const totalAiRequests = await AiAdviceCache.countDocuments();
+    const todayStart = new Date(today + 'T00:00:00.000Z');
+    const aiRequestsToday = await AiAdviceCache.countDocuments({ generatedAt: { $gte: todayStart } });
 
-    // Users with 2FA
+    // ── User Engagement ──
+    const totalUsers = await User.countDocuments();
+    const activeUsers = await User.countDocuments({ active: true });
+    const verifiedUsers = await User.countDocuments({ emailVerified: true });
+    const registrationsThisWeek = await User.countDocuments({ createdAt: { $gte: weekAgo } });
+    const registrationsThisMonth = await User.countDocuments({ createdAt: { $gte: monthAgo } });
+    const usersActiveThisWeek = await TrackingData.distinct('userId', { date: { $gte: new Date(weekAgo).toISOString().slice(0, 10) } });
     const users2faTotp = await User.countDocuments({ totpEnabled: true });
     const users2faEmail = await User.countDocuments({ email2faEnabled: true });
     const blockedUsers = await User.countDocuments({ active: false });
@@ -74,9 +161,31 @@ router.get('/stats', requireRole(...adminRoles), async (req, res) => {
     const admins = await User.countDocuments({ role: 'admin' });
     const moderators = await User.countDocuments({ role: 'moderator' });
 
-    // Tracking stats
-    const yesterdayStr = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-    const activeYesterday = await TrackingData.countDocuments({ date: yesterdayStr });
+    // Registration sparkline (last 7 days)
+    const regSparkline = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(); d.setDate(d.getDate() - i);
+      const dayStr = d.toISOString().slice(0, 10);
+      const nextD = new Date(d); nextD.setDate(nextD.getDate() + 1);
+      const count = await User.countDocuments({ createdAt: { $gte: new Date(dayStr + 'T00:00:00Z'), $lt: new Date(nextD.toISOString().slice(0, 10) + 'T00:00:00Z') } });
+      regSparkline.push({ date: dayStr, count });
+    }
+
+    // ── Streak Statistics ──
+    const activePersonalStreaks = await User.countDocuments({ currentStreak: { $gt: 0 } });
+    const longestStreakUser = await User.findOne({ bestStreak: { $gt: 0 } }).sort({ bestStreak: -1 }).select('username bestStreak');
+    const activeFriendStreaks = await FriendStreak.countDocuments({ currentStreak: { $gt: 0 } });
+    const activeGroupStreaks = await Group.countDocuments({ currentStreak: { $gt: 0 } });
+    const avgStreakPipeline = await User.aggregate([
+      { $match: { currentStreak: { $gt: 0 } } },
+      { $group: { _id: null, avg: { $avg: '$currentStreak' } } },
+    ]);
+    const avgStreakLength = Math.round((avgStreakPipeline[0]?.avg || 0) * 10) / 10;
+
+    const topUsers = await User.find({ active: true })
+      .sort({ totalStandingSeconds: -1 }).limit(5)
+      .select('userId username totalStandingSeconds level');
+    const totalLogs = await Log.countDocuments();
 
     res.json({
       server: {
@@ -84,26 +193,46 @@ router.get('/stats', requireRole(...adminRoles), async (req, res) => {
         memoryRSS: memUsage.rss,
         memoryHeap: memUsage.heapUsed,
         memoryHeapTotal: memUsage.heapTotal,
-        totalRAM,
-        freeRAM,
-        usedRAM,
-        cpuLoad: os.loadavg(),
+        totalRAM, freeRAM, usedRAM,
+        cpuPercent, cpuAvg5m,
+        diskUsed, diskTotal,
+        wsConnections,
+        onlineUsers: onlineUserIds.size,
+        dbSizeBytes,
         cpus: os.cpus().length,
         platform: os.platform(),
         nodeVersion: process.version,
         hostname: os.hostname(),
       },
-      users: { total: totalUsers, active: activeUsers, verified: verifiedUsers,
-               registrationsThisWeek, registrationsThisMonth,
-               blocked: blockedUsers,
-               totpEnabled: users2faTotp, email2faEnabled: users2faEmail,
-               superAdmins, admins, moderators },
-      tracking: { totalRecords, totalSeconds: totalTrackingSeconds,
-                  avgDailyMinutesAllUsers, activeToday, activeYesterday },
+      users: {
+        total: totalUsers, active: activeUsers, verified: verifiedUsers,
+        registrationsThisWeek, registrationsThisMonth,
+        activeThisWeek: usersActiveThisWeek.length,
+        blocked: blockedUsers,
+        totpEnabled: users2faTotp, email2faEnabled: users2faEmail,
+        twoFaTotal: users2faTotp + users2faEmail,
+        superAdmins, admins, moderators,
+        regSparkline,
+      },
+      tracking: {
+        totalRecords, totalSeconds: totalTrackingSeconds, totalSessions,
+        avgDailyMinutesAllUsers,
+        activeToday, activeYesterday,
+        sessionsStartedToday, sessionsCompletedToday,
+        aiRequestsTotal: totalAiRequests, aiRequestsToday,
+      },
+      streaks: {
+        activePersonal: activePersonalStreaks,
+        longestPersonal: longestStreakUser ? { username: longestStreakUser.username, days: longestStreakUser.bestStreak } : null,
+        activeFriend: activeFriendStreaks,
+        activeGroup: activeGroupStreaks,
+        avgLength: avgStreakLength,
+      },
       topUsers,
       logs: { total: totalLogs },
     });
   } catch (err) {
+    logger.error('Admin stats error', { source: 'admin', meta: { error: err.message } });
     res.status(500).json({ error: 'Failed to fetch stats' });
   }
 });

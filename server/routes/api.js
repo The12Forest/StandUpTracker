@@ -6,8 +6,7 @@ const Notification = require('../models/Notification');
 const User = require('../models/User');
 const DailyGoalOverride = require('../models/DailyGoalOverride');
 const { syncFriendStreaks, syncGroupStreaks } = require('../utils/streaks');
-const { getEffectiveGoalMinutes } = require('../utils/settings');
-const { recalcUserStats } = require('../utils/recalcStats');
+const { getEffectiveGoalMinutes, getSetting } = require('../utils/settings');
 
 const router = express.Router();
 
@@ -406,80 +405,172 @@ router.get('/stats', async (req, res) => {
   });
 });
 
-// ─── My Time: user self-service time viewing/editing ───
-
-// GET /my-times — return user's own tracking data + goal info
-router.get('/my-times', requireVerified, async (req, res) => {
+// ─── Extended user stats ───
+router.get('/stats/extended', requireVerified, async (req, res) => {
   try {
     const userId = req.user.userId;
-    const data = await TrackingData.find({ userId }).sort({ date: -1 }).limit(365);
-    const goalMinutes = await getEffectiveGoalMinutes(req.user);
-    res.json({ data, goalMinutes });
+    const allData = await TrackingData.find({ userId }).sort({ date: 1 });
+    const effectiveGoal = await getEffectiveGoalMinutes(req.user);
+    const goalSeconds = effectiveGoal * 60;
+    const enforceDailyGoal = await getSetting('enforceDailyGoal');
+
+    const levels = [0, 5, 15, 30, 60, 100, 200, 500, 1000, 2000];
+    const totalSeconds = allData.reduce((sum, d) => sum + d.seconds, 0);
+    const totalHours = totalSeconds / 3600;
+    const currentLevel = req.user.level || 1;
+    const currentLevelThreshold = levels[currentLevel - 1] || 0;
+    const nextLevelThreshold = levels[currentLevel] || null;
+    const levelProgress = nextLevelThreshold
+      ? Math.min(100, Math.round(((totalHours - currentLevelThreshold) / (nextLevelThreshold - currentLevelThreshold)) * 100))
+      : 100;
+
+    // Personal records
+    let longestSession = null;
+    let bestDay = null;
+    let totalSessions = 0;
+    let totalSessionDuration = 0;
+    const dayMap = {};
+
+    for (const rec of allData) {
+      dayMap[rec.date] = rec.seconds;
+      const sessions = rec.sessions || [];
+      totalSessions += sessions.length;
+      for (const s of sessions) {
+        const dur = s.duration || (s.end && s.start ? (new Date(s.end) - new Date(s.start)) / 1000 : 0);
+        totalSessionDuration += dur;
+        if (!longestSession || dur > longestSession.duration) {
+          longestSession = { duration: dur, date: rec.date };
+        }
+      }
+      if (!bestDay || rec.seconds > bestDay.seconds) {
+        bestDay = { seconds: rec.seconds, date: rec.date };
+      }
+    }
+
+    // Best week / month
+    let bestWeek = { seconds: 0, weekStart: null };
+    let bestMonth = { seconds: 0, month: null };
+    const monthTotals = {};
+    const weekTotals = {};
+
+    for (const rec of allData) {
+      // Month
+      const month = rec.date.slice(0, 7);
+      monthTotals[month] = (monthTotals[month] || 0) + rec.seconds;
+      if (monthTotals[month] > bestMonth.seconds) {
+        bestMonth = { seconds: monthTotals[month], month };
+      }
+      // ISO week (Monday start)
+      const d = new Date(rec.date + 'T00:00:00');
+      const dayOfWeek = d.getDay() || 7;
+      const monday = new Date(d);
+      monday.setDate(d.getDate() - dayOfWeek + 1);
+      const weekKey = monday.toISOString().slice(0, 10);
+      weekTotals[weekKey] = (weekTotals[weekKey] || 0) + rec.seconds;
+      if (weekTotals[weekKey] > bestWeek.seconds) {
+        bestWeek = { seconds: weekTotals[weekKey], weekStart: weekKey };
+      }
+    }
+
+    const avgSessionDuration = totalSessions > 0 ? Math.round(totalSessionDuration / totalSessions) : 0;
+
+    // Progress & Trends
+    const now = new Date();
+    const thisWeekStart = new Date(now);
+    const dayNum = thisWeekStart.getDay() || 7;
+    thisWeekStart.setDate(thisWeekStart.getDate() - dayNum + 1);
+    const thisWeekKey = thisWeekStart.toISOString().slice(0, 10);
+    const lastWeekStart = new Date(thisWeekStart);
+    lastWeekStart.setDate(lastWeekStart.getDate() - 7);
+    const lastWeekKey = lastWeekStart.toISOString().slice(0, 10);
+
+    const thisWeekSecs = weekTotals[thisWeekKey] || 0;
+    const lastWeekSecs = weekTotals[lastWeekKey] || 0;
+    const weekOverWeekChange = lastWeekSecs > 0 ? Math.round(((thisWeekSecs - lastWeekSecs) / lastWeekSecs) * 100) : (thisWeekSecs > 0 ? 100 : 0);
+
+    const thisMonthKey = now.toISOString().slice(0, 7);
+    const lastMonthDate = new Date(now); lastMonthDate.setMonth(lastMonthDate.getMonth() - 1);
+    const lastMonthKey = lastMonthDate.toISOString().slice(0, 7);
+    const thisMonthSecs = monthTotals[thisMonthKey] || 0;
+    const lastMonthSecs = monthTotals[lastMonthKey] || 0;
+    const monthOverMonthChange = lastMonthSecs > 0 ? Math.round(((thisMonthSecs - lastMonthSecs) / lastMonthSecs) * 100) : (thisMonthSecs > 0 ? 100 : 0);
+
+    // Consistency score (last 30 days)
+    let goalMetLast30 = 0;
+    for (let i = 0; i < 30; i++) {
+      const d = new Date(); d.setDate(d.getDate() - i);
+      const ds = d.toISOString().slice(0, 10);
+      if ((dayMap[ds] || 0) >= goalSeconds) goalMetLast30++;
+    }
+    const consistencyScore = Math.round((goalMetLast30 / 30) * 100);
+
+    // Goal tracking
+    let goalMetThisWeek = 0;
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(thisWeekStart);
+      d.setDate(d.getDate() + i);
+      if (d > now) break;
+      const ds = d.toISOString().slice(0, 10);
+      if ((dayMap[ds] || 0) >= goalSeconds) goalMetThisWeek++;
+    }
+
+    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    let goalMetThisMonth = 0;
+    let daysInMonthSoFar = 0;
+    for (let d = new Date(thisMonthStart); d <= now; d.setDate(d.getDate() + 1)) {
+      daysInMonthSoFar++;
+      const ds = d.toISOString().slice(0, 10);
+      if ((dayMap[ds] || 0) >= goalSeconds) goalMetThisMonth++;
+    }
+
+    // All-time goal completion rate
+    const totalTrackedDays = allData.length;
+    const totalGoalMet = allData.filter(d => d.seconds >= goalSeconds).length;
+    const goalCompletionRate = totalTrackedDays > 0 ? Math.round((totalGoalMet / totalTrackedDays) * 100) : 0;
+
+    res.json({
+      personalRecords: {
+        longestSession: longestSession ? { seconds: Math.round(longestSession.duration), date: longestSession.date } : null,
+        bestDay: bestDay ? { seconds: bestDay.seconds, date: bestDay.date } : null,
+        bestWeek: bestWeek.weekStart ? bestWeek : null,
+        bestMonth: bestMonth.month ? bestMonth : null,
+        totalSessions,
+        totalSeconds,
+        avgSessionDuration,
+      },
+      progress: {
+        level: currentLevel,
+        nextLevel: nextLevelThreshold ? currentLevel + 1 : null,
+        levelProgress,
+        currentLevelHours: currentLevelThreshold,
+        nextLevelHours: nextLevelThreshold,
+        totalHours: Math.round(totalHours * 10) / 10,
+        weekOverWeekChange,
+        monthOverMonthChange,
+        consistencyScore,
+      },
+      goals: {
+        dailyGoalMinutes: effectiveGoal,
+        enforced: !!enforceDailyGoal,
+        goalMetThisWeek,
+        goalMetThisMonth,
+        goalCompletionRate,
+        daysTracked: totalTrackedDays,
+        daysGoalMet: totalGoalMet,
+      },
+    });
   } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch time data' });
+    res.status(500).json({ error: 'Failed to fetch extended stats' });
   }
 });
 
-// PUT /my-times/:date — edit own recorded time (manual override)
-router.put('/my-times/:date', requireVerified, async (req, res) => {
-  try {
-    const userId = req.user.userId;
-    const { date } = req.params;
-    const { seconds } = req.body;
-
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      return res.status(400).json({ error: 'Invalid date format' });
-    }
-    if (seconds == null || seconds < 0 || seconds > 86400) {
-      return res.status(400).json({ error: 'Invalid seconds value' });
-    }
-
-    const existing = await TrackingData.findOne({ userId, date });
-    if (!existing) {
-      return res.status(404).json({ error: 'No tracking record for this date' });
-    }
-
-    // Store original if this is the first manual override
-    if (!existing.manualOverride && existing.originalSeconds == null) {
-      existing.originalSeconds = existing.seconds;
-    }
-    existing.seconds = seconds;
-    existing.manualOverride = true;
-    await existing.save();
-
-    await recalcUserStats(userId);
-
-    res.json({ message: 'Time updated', date, seconds, manualOverride: true, originalSeconds: existing.originalSeconds });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to update time' });
-  }
+// ─── Time editing is admin-only (via /api/admin/tracking endpoints) ───
+// Reject any non-admin attempt to edit recorded time
+router.put('/my-times/:date', (req, res) => {
+  res.status(403).json({ error: 'Time editing is restricted to administrators' });
 });
-
-// DELETE /my-times/:date/override — reset manual override to original timer value
-router.delete('/my-times/:date/override', requireVerified, async (req, res) => {
-  try {
-    const userId = req.user.userId;
-    const { date } = req.params;
-
-    const existing = await TrackingData.findOne({ userId, date });
-    if (!existing) {
-      return res.status(404).json({ error: 'No tracking record for this date' });
-    }
-    if (!existing.manualOverride) {
-      return res.status(400).json({ error: 'No manual override to reset' });
-    }
-
-    existing.seconds = existing.originalSeconds != null ? existing.originalSeconds : existing.seconds;
-    existing.manualOverride = false;
-    existing.originalSeconds = null;
-    await existing.save();
-
-    await recalcUserStats(userId);
-
-    res.json({ message: 'Override reset', date, seconds: existing.seconds });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to reset override' });
-  }
+router.delete('/my-times/:date/override', (req, res) => {
+  res.status(403).json({ error: 'Time editing is restricted to administrators' });
 });
 
 module.exports = router;
