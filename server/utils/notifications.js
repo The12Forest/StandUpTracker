@@ -18,7 +18,7 @@ async function runNotificationScheduler(io) {
     const users = await User.find({ active: true }).select('userId dailyGoalMinutes currentStreak');
 
     for (const user of users) {
-      const effectiveGoal = await getEffectiveGoalMinutes(user);
+      const effectiveGoal = await getEffectiveGoalMinutes(user, todayStr);
       const goalSeconds = effectiveGoal * 60;
       const tracking = await TrackingData.findOne({ userId: user.userId, date: todayStr });
       const todaySeconds = tracking?.seconds || 0;

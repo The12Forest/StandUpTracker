@@ -3,6 +3,7 @@ const { authenticate, requireVerified, requireRole } = require('../middleware/au
 const { aiGateCheck, softBanCheck } = require('../middleware/guards');
 const TrackingData = require('../models/TrackingData');
 const Settings = require('../models/Settings');
+const { getEffectiveGoalMinutes } = require('../utils/settings');
 const logger = require('../utils/logger');
 
 const router = express.Router();
@@ -93,7 +94,7 @@ router.post('/advice', authenticate, softBanCheck, requireVerified, aiGateCheck,
     const totalDays = dailyData.length;
     const totalMinutes = dailyData.reduce((s, d) => s + d.minutes, 0);
     const avgMinutes = totalDays > 0 ? Math.round(totalMinutes / totalDays) : 0;
-    const goalMinutes = req.user.dailyGoalMinutes;
+    const goalMinutes = await getEffectiveGoalMinutes(req.user);
     const daysMetGoal = dailyData.filter(d => d.minutes >= goalMinutes).length;
 
     // System prompt: admin default > built-in

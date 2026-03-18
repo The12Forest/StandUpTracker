@@ -3,8 +3,9 @@ const User = require('../models/User');
 const Friendship = require('../models/Friendship');
 const Notification = require('../models/Notification');
 const TrackingData = require('../models/TrackingData');
+const DailyGoalOverride = require('../models/DailyGoalOverride');
 const logger = require('../utils/logger');
-const { getJwtSecret, getEffectiveGoalMinutes, getSetting } = require('../utils/settings');
+const { getJwtSecret, getEffectiveGoalMinutes } = require('../utils/settings');
 const { syncFriendStreaks, syncGroupStreaks } = require('../utils/streaks');
 
 // Global counter state — Single Source of Truth
@@ -189,10 +190,16 @@ function setupSocket(io) {
           // Recalc stats
           const allData = await TrackingData.find({ userId });
           const totalSeconds = allData.reduce((sum, d) => sum + d.seconds, 0);
-          const streakThreshold = await getSetting('streakThresholdMinutes') || 3;
-          const totalDays = allData.filter(d => d.seconds >= streakThreshold * 60).length;
           const effectiveGoal = await getEffectiveGoalMinutes(u);
-          const goalSeconds = effectiveGoal * 60;
+          const defaultGoalSeconds = effectiveGoal * 60;
+
+          // Load per-day overrides for accurate streak/totalDays
+          const overrides = await DailyGoalOverride.find({ userId });
+          const overrideMap = {};
+          overrides.forEach(o => { overrideMap[o.date] = o.goalMinutes * 60; });
+          const getGoalSeconds = (dt) => overrideMap[dt] || defaultGoalSeconds;
+
+          const totalDays = allData.filter(d => d.seconds >= getGoalSeconds(d.date)).length;
           const dataMap = {};
           allData.forEach(d => { dataMap[d.date] = d.seconds; });
 
@@ -202,7 +209,7 @@ function setupSocket(io) {
             const d = new Date(todayDate);
             d.setDate(d.getDate() - i);
             const ds = d.toISOString().slice(0, 10);
-            if ((dataMap[ds] || 0) >= goalSeconds) currentStreak++;
+            if ((dataMap[ds] || 0) >= getGoalSeconds(ds)) currentStreak++;
             else break;
           }
 
@@ -213,7 +220,7 @@ function setupSocket(io) {
             const last = new Date(sorted[sorted.length - 1] + 'T00:00:00');
             for (let d = new Date(first); d <= last; d.setDate(d.getDate() + 1)) {
               const ds = d.toISOString().slice(0, 10);
-              if ((dataMap[ds] || 0) >= goalSeconds) { run++; bestStreak = Math.max(bestStreak, run); }
+              if ((dataMap[ds] || 0) >= getGoalSeconds(ds)) { run++; bestStreak = Math.max(bestStreak, run); }
               else run = 0;
             }
           }
@@ -228,7 +235,8 @@ function setupSocket(io) {
           const oldLevel = u.level || 1;
           const todayTotalSeconds = record.seconds;
           const previousTotalSeconds = todayTotalSeconds - sessionSeconds;
-          const goalReachedNow = todayTotalSeconds >= goalSeconds && previousTotalSeconds < goalSeconds;
+          const todayGoalSeconds = getGoalSeconds(date);
+          const goalReachedNow = todayTotalSeconds >= todayGoalSeconds && previousTotalSeconds < todayGoalSeconds;
 
           await User.updateOne({ userId }, { totalStandingSeconds: totalSeconds, totalDays, currentStreak, bestStreak, level });
 
@@ -252,8 +260,8 @@ function setupSocket(io) {
           if (goalReachedNow) {
             const notif = await Notification.create({
               userId, type: 'daily_goal_reached', title: 'Daily Goal Reached!',
-              message: `You hit your ${effectiveGoal}-minute daily goal. Great work!`,
-              data: { minutes: effectiveGoal },
+              message: `You hit your ${Math.round(todayGoalSeconds / 60)}-minute daily goal. Great work!`,
+              data: { minutes: Math.round(todayGoalSeconds / 60) },
             });
             io.to(`user:${userId}`).emit('NOTIFICATION', notif.toObject());
           }
