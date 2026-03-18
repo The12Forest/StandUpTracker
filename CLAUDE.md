@@ -25,7 +25,7 @@ docker compose up -d                 # App + MongoDB 7 on port 3000
 
 ## Architecture
 
-**Standing desk tracker** with timer, streaks, social features, groups, leaderboard, and admin console.
+**Standing desk tracker** with timer, streaks, social features, groups, leaderboard, AI advisor, and admin console.
 
 ### Backend (Express + MongoDB + Socket.io)
 
@@ -46,11 +46,25 @@ router.use(authenticate, softBanCheck, lastActiveTouch);
 router.post('/thing', requireVerified, currentDayGuard, async (req, res) => { ... });
 ```
 
-**Routes:** auth, api (timer + tracking), admin, social, groups, leaderboard, notifications, onboarding, ai
+**Routes:** auth, api (timer + tracking + user self-service time editing), admin, social, groups, leaderboard, notifications, onboarding, ai
 
-**Models:** User (UUID userId, Argon2 passwords, role enum, stats, timer state, 2FA), TrackingData (userId+date unique, seconds, sessions array), Settings (key-value, DB-backed config), Group, Friendship, FriendStreak, AuditLog (365d TTL), Notification
+**Models:** User (UUID userId, Argon2 passwords, role enum, stats, timer state, 2FA), TrackingData (userId+date unique, seconds, sessions array, manualOverride flag, originalSeconds), DailyGoalOverride (per-user per-day goal overrides, 1-1440 min), Settings (key-value, DB-backed config), Group, Friendship, FriendStreak, AuditLog (365d TTL), Notification, Log, AiAdviceCache (per-user cached AI advice with TTL auto-cleanup)
 
-**DB-backed settings** (`server/utils/settings.js`): Nearly all configuration (JWT secret, SMTP, feature flags, limits) lives in the Settings collection with a 15-second in-memory cache. Access via `getSetting(key)` / `getEffectiveGoalMinutes(user)`. The JWT secret is auto-generated on first launch if blank.
+**DB-backed settings** (`server/utils/settings.js`): Nearly all configuration (JWT secret, SMTP, feature flags, limits, AI config) lives in the Settings collection with a 15-second in-memory cache. Access via `getSetting(key)` / `getEffectiveGoalMinutes(user)`. The JWT secret is auto-generated on first launch if blank.
+
+### Stats Recalculation (`server/utils/recalcStats.js`)
+
+`recalcUserStats(userId)` is the single source of truth for computing user stats. It loads all TrackingData, respects per-day DailyGoalOverride entries, and calculates totalSeconds, totalDays, currentStreak, bestStreak, and level. Stats are **always fully recalculated**, never incremented. Call this after any tracking data mutation.
+
+### Manual Override System
+
+TrackingData records track whether they've been manually edited (`manualOverride: true`) and preserve the original timer value (`originalSeconds`). Both admin and user self-service time editing endpoints set these fields on first edit and support resetting to original via `DELETE .../override` endpoints.
+
+### AI Advice System
+
+- `GET /api/ai/advice` — serves cached advice from AiAdviceCache (no generation)
+- `POST /api/ai/advice` — generates fresh advice via Ollama, subject to server-side cooldown (`aiAdviceCooldownMinutes`) and cache duration (`aiAdviceCacheDurationMinutes`). Returns 429 with `retryAfterSeconds` and `nextRefreshAt` when cooldown active
+- Admin configures Ollama endpoint, model, system prompt, max tokens, cooldown, and cache duration via Settings
 
 ### Frontend (React 19 + Vite + Zustand + Tailwind CSS 4)
 
@@ -60,7 +74,7 @@ router.post('/thing', requireVerified, currentDayGuard, async (req, res) => { ..
 - `useTimerStore` — timer state with NTP offset correction (`correctedNow()` for accurate elapsed display)
 - `useNotificationStore` / `useToastStore` — notifications and toast messages
 
-**API layer** (`frontend/src/lib/api.js`): fetch wrapper that attaches Bearer token or relies on HttpOnly cookie; auto-clears auth and redirects on 401.
+**API layer** (`frontend/src/lib/api.js`): fetch wrapper that attaches Bearer token or relies on HttpOnly cookie; auto-clears auth and redirects on 401. Thrown errors include `.status` (HTTP code) and `.data` (parsed response body) for handling specific status codes like 429.
 
 ### Socket.io (`server/socket/handler.js`)
 
@@ -79,6 +93,10 @@ Key flows:
 - **Group streaks:** ALL members must meet threshold; `syncGroupStreaks()` called after tracking save
 - **Hourly cleanup** in `server/index.js` resets streaks for missed days
 
+### Per-Day Goal Overrides
+
+`DailyGoalOverride` allows admins to set a different goal for specific user+date combinations. `getEffectiveGoalMinutes(user, date)` resolves the effective goal: per-day override > enforced master goal > user preference > default. The `recalcUserStats` utility and all streak calculations respect these overrides.
+
 ## Working Guidelines
 
 - Keep middleware chains consistent — especially `authenticate`, `requireVerified`, `softBanCheck` ordering.
@@ -87,9 +105,11 @@ Key flows:
 - Validate backend edits: `node --check server/routes/changed-file.js`
 - Validate frontend edits: `cd frontend && npm run build`
 - Date strings use `YYYY-MM-DD` format throughout. UUIDs (v4) for userId and groupId.
-- Stats are always fully recalculated from TrackingData, never incremented.
+- Stats are always fully recalculated from TrackingData via `recalcUserStats()`, never incremented.
 - Roles: `user | moderator | admin | super_admin`. First registered user auto-becomes super_admin.
 - Only env var needed: `MONGO_URI`. Everything else is configured via Admin Console → Settings collection.
+- Admin page uses URL-based tab state (`?tab=users`). Back navigation from sub-pages should preserve the tab (e.g., `/admin?tab=users`).
+- New SPA routes must be added to the `spaPages` array in `server/index.js` for the catch-all fallback to work.
 
 ## Docker
 
