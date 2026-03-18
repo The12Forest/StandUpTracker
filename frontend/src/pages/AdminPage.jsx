@@ -531,13 +531,13 @@ function UsersTab() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-1 flex-wrap">
+                      <button onClick={() => navigate(`/admin/user/${u.userId}/times`)} className="text-[10px] px-1.5 py-0.5 rounded text-accent-400 hover:bg-accent-500/10 flex items-center gap-0.5" title="Edit Daily Times">
+                        <Clock size={11} /> Edit Time
+                      </button>
                       {isSuperAdmin && u.role !== 'super_admin' && (
                         <>
                           <button onClick={() => handleImpersonate(u.userId)} className="text-[10px] px-1.5 py-0.5 rounded text-warn-400 hover:bg-warn-500/10 flex items-center gap-0.5" title="Impersonate">
                             <Eye size={11} /> View As
-                          </button>
-                          <button onClick={() => navigate(`/admin/user/${u.userId}/times`)} className="text-[10px] px-1.5 py-0.5 rounded text-accent-400 hover:bg-accent-500/10 flex items-center gap-0.5" title="Edit Daily Times">
-                            <Clock size={11} /> Edit Time
                           </button>
                           <button onClick={() => handleBlockUser(u.userId, u.active)} className="text-[10px] px-1.5 py-0.5 rounded text-zen-500 hover:bg-zen-700/50 flex items-center gap-0.5" title={u.active ? 'Deactivate' : 'Reactivate'}>
                             {u.active ? <><Ban size={11} /> Deactivate</> : <><Unlock size={11} /> Reactivate</>}

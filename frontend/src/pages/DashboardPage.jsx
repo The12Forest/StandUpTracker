@@ -171,16 +171,14 @@ export default function DashboardPage() {
   }, [tracking]);
   const prediction = predictDailyGoal(historyArr, user?.dailyGoalMinutes || 30);
 
-  const [generatedAgo, setGeneratedAgo] = useState(null);
+  const [nowTs, setNowTs] = useState(Date.now);
   useEffect(() => {
-    if (!aiAdvice?.generatedAt) { setGeneratedAgo(null); return; }
-    function calc() {
-      setGeneratedAgo(Math.round((Date.now() - new Date(aiAdvice.generatedAt).getTime()) / 60000));
-    }
-    calc();
-    const id = setInterval(calc, 60000);
+    const id = setInterval(() => setNowTs(Date.now()), 60000);
     return () => clearInterval(id);
-  }, [aiAdvice?.generatedAt]);
+  }, []);
+  const generatedAgo = aiAdvice?.generatedAt
+    ? Math.round((nowTs - new Date(aiAdvice.generatedAt).getTime()) / 60000)
+    : null;
 
   const pr = extStats?.personalRecords;
   const prog = extStats?.progress;
