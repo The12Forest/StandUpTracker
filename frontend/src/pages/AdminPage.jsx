@@ -689,6 +689,7 @@ const SECTION_LABELS = {
   ai: { label: 'AI / Ollama', icon: Brain, description: 'Configure the Ollama AI endpoint, model, and feature toggle' },
   push: { label: 'Push Notifications', icon: Wifi, description: 'VAPID keys for Web Push notifications' },
   thresholds: { label: 'Activity Thresholds', icon: Activity, description: 'Minimum activity requirements for statistics inclusion' },
+  reporting: { label: 'Reporting', icon: Flame, description: 'Timer abuse reporting: threshold, cooldown, and self-report settings' },
   logging: { label: 'Logging', icon: ScrollText, description: 'Log levels and retention policies' },
   general: { label: 'Other Settings', icon: Sliders, description: 'Miscellaneous settings' },
 };
@@ -783,7 +784,7 @@ function SettingsTab() {
     sections[section].push({ key, ...meta });
   }
 
-  const sectionOrder = ['enforcement', 'thresholds', 'push', 'server', 'security', 'client', 'mail', 'auth', 'social', 'groups', 'emailAdmin', 'ai', 'logging', 'general'];
+  const sectionOrder = ['enforcement', 'thresholds', 'reporting', 'push', 'server', 'security', 'client', 'mail', 'auth', 'social', 'groups', 'emailAdmin', 'ai', 'logging', 'general'];
 
   return (
     <div className="space-y-6">

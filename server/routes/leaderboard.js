@@ -38,7 +38,7 @@ router.get('/', async (req, res) => {
 
     // Fetch usernames
     const userIds = rankings.map(r => r._id);
-    const users = await User.find({ userId: { $in: userIds }, active: true }).select('userId username level');
+    const users = await User.find({ userId: { $in: userIds }, active: true, deletedAt: null }).select('userId username level');
     const userMap = {};
     users.forEach(u => { userMap[u.userId] = u; });
 

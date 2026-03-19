@@ -409,14 +409,16 @@ router.put('/profile', authenticate, softBanCheck, async (req, res) => {
     if (theme && ['dark', 'light', 'system'].includes(theme)) {
       req.user.theme = theme;
     }
-    if (dailyGoalMinutes && dailyGoalMinutes >= 1 && dailyGoalMinutes <= 480) {
+    if (dailyGoalMinutes !== undefined && dailyGoalMinutes !== null) {
+      const goal = Number(dailyGoalMinutes);
+      if (!Number.isInteger(goal) || goal < 1 || goal > 480) {
+        return res.status(400).json({ error: 'Daily goal must be a whole number between 1 and 480 minutes' });
+      }
       const enforced = await getSetting('enforceDailyGoal');
       if (enforced) {
         return res.status(403).json({ error: 'Daily goal is set by your administrator and cannot be changed' });
       }
-      req.user.dailyGoalMinutes = dailyGoalMinutes;
-    } else if (dailyGoalMinutes !== undefined && dailyGoalMinutes !== null) {
-      return res.status(400).json({ error: 'Daily goal must be between 1 and 480 minutes' });
+      req.user.dailyGoalMinutes = goal;
     }
     if (typeof geminiOptIn === 'boolean') {
       req.user.geminiOptIn = geminiOptIn;

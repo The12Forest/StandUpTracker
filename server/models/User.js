@@ -42,6 +42,9 @@ const userSchema = new mongoose.Schema({
     friend_request: { type: Boolean, default: true },
     level_up: { type: Boolean, default: true },
     daily_goal_reached: { type: Boolean, default: true },
+    report_warning: { type: Boolean, default: true },
+    report_cleared: { type: Boolean, default: true },
+    admin_report_alert: { type: Boolean, default: true },
   },
   standupReminderTime: { type: String, default: '12:00' }, // HH:MM in UTC
   // Active timer (server-authoritative)

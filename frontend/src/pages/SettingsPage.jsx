@@ -34,8 +34,12 @@ export default function SettingsPage() {
     friend_request: true,
     level_up: true,
     daily_goal_reached: true,
+    report_warning: true,
+    report_cleared: true,
+    admin_report_alert: true,
   });
   const [reminderTime, setReminderTime] = useState('12:00');
+  const [goalError, setGoalError] = useState('');
 
   useEffect(() => {
     if (user) {
@@ -52,11 +56,17 @@ export default function SettingsPage() {
   }, [user]);
 
   const handleProfileSave = async () => {
+    const goal = Number(profile.dailyGoalMinutes);
+    if (!user?.enforceDailyGoal && (!Number.isInteger(goal) || goal < 1 || goal > 480)) {
+      setGoalError('Daily goal must be a whole number between 1 and 480');
+      return;
+    }
+    setGoalError('');
     try {
-      await updateProfile(profile);
+      await updateProfile({ ...profile, dailyGoalMinutes: goal });
       toast.success('Profile updated');
     } catch (err) {
-      toast.error(err.message);
+      toast.error(err.data?.error || err.message);
     }
   };
 
@@ -250,9 +260,12 @@ export default function SettingsPage() {
                 <span className="text-[10px] text-zen-500">Set by administrator</span>
               </div>
             ) : (
-              <input type="number" min={1} max={480} value={profile.dailyGoalMinutes}
-                onChange={(e) => setProfile({ ...profile, dailyGoalMinutes: parseInt(e.target.value) || 30 })}
-                className="glass-input w-32" />
+              <>
+                <input type="number" min={1} max={480} value={profile.dailyGoalMinutes}
+                  onChange={(e) => { setGoalError(''); setProfile({ ...profile, dailyGoalMinutes: e.target.value }); }}
+                  className={`glass-input w-32 ${goalError ? 'border-danger-400' : ''}`} />
+                {goalError && <p className="text-[10px] text-danger-400 mt-1">{goalError}</p>}
+              </>
             )}
           </div>
           <div className="flex items-center justify-between py-2 border-t border-zen-700/30">
@@ -452,6 +465,11 @@ export default function SettingsPage() {
                 { key: 'friend_request', label: 'Friend Request', desc: 'When someone sends you a friend request' },
                 { key: 'level_up', label: 'Level Up', desc: 'When you reach a new level' },
                 { key: 'daily_goal_reached', label: 'Goal Reached', desc: 'When you hit your daily goal' },
+                { key: 'report_warning', label: 'Report Warning', desc: 'When someone reports your timer session' },
+                { key: 'report_cleared', label: 'Report Cleared', desc: 'When your daily progress is cleared due to reports' },
+                ...(user?.role === 'admin' || user?.role === 'super_admin' ? [
+                  { key: 'admin_report_alert', label: 'Admin Report Alert', desc: 'When a user\'s progress is cleared by reports' },
+                ] : []),
               ].map(({ key, label, desc }) => (
                 <div key={key} className="flex items-center justify-between py-1">
                   <div>

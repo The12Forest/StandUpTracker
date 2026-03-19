@@ -73,6 +73,11 @@ const DEFAULTS = {
   // Activity Thresholds
   minActivityThresholdMinutes: { value: 1, description: 'Minimum standing time (minutes) for a day to count in statistics. Days below this are excluded from stats and heatmap. Does not affect streaks.', section: 'thresholds' },
 
+  // Reporting
+  reportThreshold: { value: 3, description: 'Number of confirmed reports against a single session before daily progress is cleared (min 1)', section: 'reporting' },
+  reportCooldownMinutes: { value: 60, description: 'Minimum minutes a reporter must wait before submitting another report against any user', section: 'reporting' },
+  allowSelfReport: { value: false, description: 'Whether users can report their own sessions (should remain off in almost all cases)', section: 'reporting' },
+
   // Logging
   logLevel: { value: 'INFO', description: 'Minimum log level (DEBUG, INFO, WARN, ERROR)', section: 'logging' },
   logRetentionDays: { value: 90, description: 'Days to retain logs before auto-deletion', section: 'logging' },

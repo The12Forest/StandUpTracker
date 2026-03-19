@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Clock, Check, Loader2, X, Calendar, Pencil, RotateCcw, Eye, EyeOff, Coffee } from 'lucide-react';
+import { ArrowLeft, Clock, Check, Loader2, X, Calendar, Pencil, RotateCcw, Eye, EyeOff, Coffee, Flag, Undo2 } from 'lucide-react';
 import { api } from '../lib/api';
 import { BentoCard } from '../components/BentoCard';
 import useToastStore from '../stores/useToastStore';
@@ -30,6 +30,7 @@ export default function AdminUserTimePage() {
   const [localOverrides, setLocalOverrides] = useState({});
   const [localTimes, setLocalTimes] = useState({});
   const [localOffDays, setLocalOffDays] = useState({});
+  const [reportClearedMap, setReportClearedMap] = useState({});
   const [showAllDays, setShowAllDays] = useState(true);
   const debounceTimers = useRef({});
   const timeDebounceTimers = useRef({});
@@ -43,6 +44,7 @@ export default function AdminUserTimePage() {
           setData(result);
           setLocalOverrides(result.overrideMap || {});
           setLocalOffDays(result.offDayMap || {});
+          setReportClearedMap(result.reportClearedMap || {});
         }
       } catch (err) {
         if (!cancelled) useToastStore.getState().error(err.message || 'Failed to load data');
@@ -190,6 +192,24 @@ export default function AdminUserTimePage() {
     setSavingRows(prev => ({ ...prev, [`off-${date}`]: false }));
   };
 
+  const restoreReportCleared = async (date) => {
+    if (!confirm(`Restore the original recorded time for ${date}? This will undo the report-based clearing.`)) return;
+    setSavingRows(prev => ({ ...prev, [`restore-${date}`]: true }));
+    try {
+      const result = await api(`/api/admin/users/${userId}/restore-report/${date}`, { method: 'POST' });
+      // Refresh data
+      const refreshed = await api(`/api/admin/users/${userId}/daily-times`);
+      setData(refreshed);
+      setLocalOverrides(refreshed.overrideMap || {});
+      setLocalOffDays(refreshed.offDayMap || {});
+      setReportClearedMap(refreshed.reportClearedMap || {});
+      toast.success(result.message || 'Progress restored');
+    } catch (err) {
+      toast.error(err.data?.error || err.message || 'Failed to restore');
+    }
+    setSavingRows(prev => ({ ...prev, [`restore-${date}`]: false }));
+  };
+
   if (loading) return <div className="text-zen-500">Loading user time data...</div>;
   if (!data) return <div className="text-zen-500">Failed to load data.</div>;
 
@@ -243,6 +263,7 @@ export default function AdminUserTimePage() {
                 const hasGoalOverride = localOverrides[date] !== undefined;
                 const isManualOverride = data.manualOverrideMap?.[date];
                 const isOffDay = !!localOffDays[date];
+                const reportCleared = reportClearedMap[date];
                 const isToday = date === today;
                 const isFuture = date > today;
                 const isGoalSaving = savingRows[`goal-${date}`];
@@ -257,6 +278,7 @@ export default function AdminUserTimePage() {
                   <tr
                     key={date}
                     className={`border-b border-zen-700/20 transition-colors ${
+                      reportCleared && !reportCleared.restored ? 'bg-danger-500/10 border-l-2 border-l-danger-400' :
                       isOffDay ? 'bg-zen-800/40 opacity-70' :
                       isToday ? 'bg-accent-500/5' : isFuture ? 'bg-zen-800/20' : 'hover:bg-zen-800/30'
                     }`}
@@ -338,7 +360,24 @@ export default function AdminUserTimePage() {
                       </div>
                     </td>
                     <td className="px-4 py-2 text-center">
-                      {isOffDay ? (
+                      {reportCleared && !reportCleared.restored ? (
+                        <div className="flex items-center justify-center gap-1.5">
+                          <span className="text-[10px] text-danger-400 bg-danger-500/10 px-1.5 py-0.5 rounded flex items-center gap-0.5">
+                            <Flag size={9} /> Cleared ({reportCleared.reportCount})
+                          </span>
+                          <span className="text-[10px] text-zen-600">was {formatMinutesDisplay(reportCleared.preReportSeconds)}</span>
+                          <button
+                            onClick={() => restoreReportCleared(date)}
+                            disabled={savingRows[`restore-${date}`]}
+                            className="text-[10px] px-1 py-0.5 rounded text-accent-400 hover:bg-accent-500/10 flex items-center gap-0.5"
+                            title="Restore original time"
+                          >
+                            {savingRows[`restore-${date}`] ? <Loader2 size={10} className="animate-spin" /> : <Undo2 size={10} />} Restore
+                          </button>
+                        </div>
+                      ) : reportCleared?.restored ? (
+                        <span className="text-[10px] text-accent-400 bg-accent-500/10 px-1.5 py-0.5 rounded">Restored</span>
+                      ) : isOffDay ? (
                         <span className="text-[10px] text-zen-500 bg-zen-700/50 px-1.5 py-0.5 rounded">off</span>
                       ) : recordedSeconds > 0 ? (
                         <span className="text-[10px] text-zen-500">{formatMinutesDisplay(recordedSeconds)}</span>

@@ -11,6 +11,14 @@ const trackingDataSchema = new mongoose.Schema({
   }],
   manualOverride: { type: Boolean, default: false },
   originalSeconds: { type: Number, default: null },
+  // Report system fields
+  clearedByReports: { type: Boolean, default: false },
+  reportClearedAt: { type: Date, default: null },
+  reportCount: { type: Number, default: 0 },
+  preReportSeconds: { type: Number, default: null },
+  reportRestored: { type: Boolean, default: false },
+  reportRestoredBy: { type: String, default: null },
+  reportRestoredAt: { type: Date, default: null },
 }, { timestamps: true });
 
 trackingDataSchema.index({ userId: 1, date: 1 }, { unique: true });

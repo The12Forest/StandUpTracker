@@ -111,8 +111,12 @@ router.get('/stats', requireRole(...adminRoles), async (req, res) => {
       dbSizeBytes = dbStats.dataSize + (dbStats.indexSize || 0);
     } catch { /* db stats unavailable */ }
 
-    // ── Application Activity ──
+    // ── Application Activity ── (exclude deleted users' tracking data)
+    const deletedUserIds = (await User.find({ deletedAt: { $ne: null } }).select('userId')).map(u => u.userId);
+    const trackingNotDeleted = deletedUserIds.length > 0 ? { userId: { $nin: deletedUserIds } } : {};
+
     const trackingAgg = await TrackingData.aggregate([
+      ...(deletedUserIds.length ? [{ $match: trackingNotDeleted }] : []),
       { $group: { _id: null, totalSeconds: { $sum: '$seconds' }, totalRecords: { $sum: 1 } } },
     ]);
     const totalTrackingSeconds = trackingAgg[0]?.totalSeconds || 0;
@@ -120,22 +124,24 @@ router.get('/stats', requireRole(...adminRoles), async (req, res) => {
 
     // Total sessions (sum of sessions array lengths)
     const sessionCountAgg = await TrackingData.aggregate([
+      ...(deletedUserIds.length ? [{ $match: trackingNotDeleted }] : []),
       { $project: { sessionCount: { $size: { $ifNull: ['$sessions', []] } } } },
       { $group: { _id: null, total: { $sum: '$sessionCount' } } },
     ]);
     const totalSessions = sessionCountAgg[0]?.total || totalRecords;
 
     const avgPipeline = await TrackingData.aggregate([
+      ...(deletedUserIds.length ? [{ $match: trackingNotDeleted }] : []),
       { $group: { _id: '$userId', total: { $sum: '$seconds' }, days: { $sum: 1 } } },
       { $group: { _id: null, avgDaily: { $avg: { $divide: ['$total', '$days'] } } } },
     ]);
     const avgDailyMinutesAllUsers = Math.round((avgPipeline[0]?.avgDaily || 0) / 60);
 
-    const activeToday = await TrackingData.countDocuments({ date: today });
-    const activeYesterday = await TrackingData.countDocuments({ date: yesterdayStr });
+    const activeToday = await TrackingData.countDocuments({ date: today, ...trackingNotDeleted });
+    const activeYesterday = await TrackingData.countDocuments({ date: yesterdayStr, ...trackingNotDeleted });
 
     // Sessions started/completed today
-    const todayRecords = await TrackingData.find({ date: today }).select('sessions');
+    const todayRecords = await TrackingData.find({ date: today, ...trackingNotDeleted }).select('sessions');
     let sessionsStartedToday = 0, sessionsCompletedToday = 0;
     for (const rec of todayRecords) {
       const sess = rec.sessions || [];
@@ -148,19 +154,20 @@ router.get('/stats', requireRole(...adminRoles), async (req, res) => {
     const todayStart = new Date(today + 'T00:00:00.000Z');
     const aiRequestsToday = await AiAdviceCache.countDocuments({ generatedAt: { $gte: todayStart } });
 
-    // ── User Engagement ──
-    const totalUsers = await User.countDocuments();
-    const activeUsers = await User.countDocuments({ active: true });
-    const verifiedUsers = await User.countDocuments({ emailVerified: true });
-    const registrationsThisWeek = await User.countDocuments({ createdAt: { $gte: weekAgo } });
-    const registrationsThisMonth = await User.countDocuments({ createdAt: { $gte: monthAgo } });
+    // ── User Engagement ── (exclude soft-deleted users)
+    const notDeleted = { deletedAt: null };
+    const totalUsers = await User.countDocuments(notDeleted);
+    const activeUsers = await User.countDocuments({ active: true, ...notDeleted });
+    const verifiedUsers = await User.countDocuments({ emailVerified: true, ...notDeleted });
+    const registrationsThisWeek = await User.countDocuments({ createdAt: { $gte: weekAgo }, ...notDeleted });
+    const registrationsThisMonth = await User.countDocuments({ createdAt: { $gte: monthAgo }, ...notDeleted });
     const usersActiveThisWeek = await TrackingData.distinct('userId', { date: { $gte: new Date(weekAgo).toISOString().slice(0, 10) } });
-    const users2faTotp = await User.countDocuments({ totpEnabled: true });
-    const users2faEmail = await User.countDocuments({ email2faEnabled: true });
-    const blockedUsers = await User.countDocuments({ active: false });
-    const superAdmins = await User.countDocuments({ role: 'super_admin' });
-    const admins = await User.countDocuments({ role: 'admin' });
-    const moderators = await User.countDocuments({ role: 'moderator' });
+    const users2faTotp = await User.countDocuments({ totpEnabled: true, ...notDeleted });
+    const users2faEmail = await User.countDocuments({ email2faEnabled: true, ...notDeleted });
+    const blockedUsers = await User.countDocuments({ active: false, ...notDeleted });
+    const superAdmins = await User.countDocuments({ role: 'super_admin', ...notDeleted });
+    const admins = await User.countDocuments({ role: 'admin', ...notDeleted });
+    const moderators = await User.countDocuments({ role: 'moderator', ...notDeleted });
 
     // Registration sparkline (last 7 days)
     const regSparkline = [];
@@ -168,22 +175,22 @@ router.get('/stats', requireRole(...adminRoles), async (req, res) => {
       const d = new Date(); d.setDate(d.getDate() - i);
       const dayStr = d.toISOString().slice(0, 10);
       const nextD = new Date(d); nextD.setDate(nextD.getDate() + 1);
-      const count = await User.countDocuments({ createdAt: { $gte: new Date(dayStr + 'T00:00:00Z'), $lt: new Date(nextD.toISOString().slice(0, 10) + 'T00:00:00Z') } });
+      const count = await User.countDocuments({ createdAt: { $gte: new Date(dayStr + 'T00:00:00Z'), $lt: new Date(nextD.toISOString().slice(0, 10) + 'T00:00:00Z') }, ...notDeleted });
       regSparkline.push({ date: dayStr, count });
     }
 
-    // ── Streak Statistics ──
-    const activePersonalStreaks = await User.countDocuments({ currentStreak: { $gt: 0 } });
-    const longestStreakUser = await User.findOne({ bestStreak: { $gt: 0 } }).sort({ bestStreak: -1 }).select('username bestStreak');
+    // ── Streak Statistics ── (exclude soft-deleted users)
+    const activePersonalStreaks = await User.countDocuments({ currentStreak: { $gt: 0 }, ...notDeleted });
+    const longestStreakUser = await User.findOne({ bestStreak: { $gt: 0 }, ...notDeleted }).sort({ bestStreak: -1 }).select('username bestStreak');
     const activeFriendStreaks = await FriendStreak.countDocuments({ currentStreak: { $gt: 0 } });
     const activeGroupStreaks = await Group.countDocuments({ currentStreak: { $gt: 0 } });
     const avgStreakPipeline = await User.aggregate([
-      { $match: { currentStreak: { $gt: 0 } } },
+      { $match: { currentStreak: { $gt: 0 }, ...notDeleted } },
       { $group: { _id: null, avg: { $avg: '$currentStreak' } } },
     ]);
     const avgStreakLength = Math.round((avgStreakPipeline[0]?.avg || 0) * 10) / 10;
 
-    const topUsers = await User.find({ active: true })
+    const topUsers = await User.find({ active: true, ...notDeleted })
       .sort({ totalStandingSeconds: -1 }).limit(5)
       .select('userId username totalStandingSeconds level');
     const totalLogs = await Log.countDocuments();
@@ -688,18 +695,19 @@ router.get('/connections', requireRole(...adminRoles), async (req, res) => {
 // ─── Extended Statistics: Users, Friends, Groups ───
 router.get('/stats/extended', requireRole(...adminRoles), async (req, res) => {
   try {
-    // === USERS ===
-    const totalUsers = await User.countDocuments();
-    const activeUsers = await User.countDocuments({ active: true });
+    // === USERS === (exclude soft-deleted users)
+    const notDeleted = { deletedAt: null };
+    const totalUsers = await User.countDocuments(notDeleted);
+    const activeUsers = await User.countDocuments({ active: true, ...notDeleted });
     const inactiveUsers = totalUsers - activeUsers;
-    const verifiedEmails = await User.countDocuments({ emailVerified: true });
+    const verifiedEmails = await User.countDocuments({ emailVerified: true, ...notDeleted });
     const unverifiedEmails = totalUsers - verifiedEmails;
 
     // New registrations over time (last 12 months)
     const twelveMonthsAgo = new Date();
     twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
     const registrationsByMonth = await User.aggregate([
-      { $match: { createdAt: { $gte: twelveMonthsAgo } } },
+      { $match: { createdAt: { $gte: twelveMonthsAgo }, ...notDeleted } },
       { $group: { _id: { $dateToString: { format: '%Y-%m', date: '$createdAt' } }, count: { $sum: 1 } } },
       { $sort: { _id: 1 } },
     ]);
@@ -709,9 +717,9 @@ router.get('/stats/extended', requireRole(...adminRoles), async (req, res) => {
     const day = new Date(now - 24 * 60 * 60 * 1000);
     const week = new Date(now - 7 * 24 * 60 * 60 * 1000);
     const month = new Date(now - 30 * 24 * 60 * 60 * 1000);
-    const activeLast24h = await User.countDocuments({ lastActiveAt: { $gte: day } });
-    const activeLast7d = await User.countDocuments({ lastActiveAt: { $gte: week } });
-    const activeLast30d = await User.countDocuments({ lastActiveAt: { $gte: month } });
+    const activeLast24h = await User.countDocuments({ lastActiveAt: { $gte: day }, ...notDeleted });
+    const activeLast7d = await User.countDocuments({ lastActiveAt: { $gte: week }, ...notDeleted });
+    const activeLast30d = await User.countDocuments({ lastActiveAt: { $gte: month }, ...notDeleted });
 
     // === FRIENDS ===
     const totalFriendships = await Friendship.countDocuments({ status: 'accepted' });
@@ -738,7 +746,7 @@ router.get('/stats/extended', requireRole(...adminRoles), async (req, res) => {
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5);
     const topFriendUserIds = topByFriends.map(([uid]) => uid);
-    const topFriendUsers = await User.find({ userId: { $in: topFriendUserIds } }).select('userId username');
+    const topFriendUsers = await User.find({ userId: { $in: topFriendUserIds }, ...notDeleted }).select('userId username');
     const topFriendUserMap = {};
     topFriendUsers.forEach(u => { topFriendUserMap[u.userId] = u.username; });
     const topUsersByFriendCount = topByFriends.map(([uid, count]) => ({
@@ -1060,9 +1068,20 @@ router.get('/users/:userId/daily-times', requireRole(...adminRoles), async (req,
     });
     const trackingMap = {};
     const manualOverrideMap = {};
+    const reportClearedMap = {};
     tracking.forEach(d => {
       trackingMap[d.date] = d.seconds;
       if (d.manualOverride) manualOverrideMap[d.date] = true;
+      if (d.clearedByReports) {
+        reportClearedMap[d.date] = {
+          preReportSeconds: d.preReportSeconds,
+          reportCount: d.reportCount,
+          clearedAt: d.reportClearedAt,
+          restored: d.reportRestored,
+          restoredBy: d.reportRestoredBy,
+          restoredAt: d.reportRestoredAt,
+        };
+      }
     });
 
     // Get all overrides in range
@@ -1087,6 +1106,7 @@ router.get('/users/:userId/daily-times', requireRole(...adminRoles), async (req,
       defaultGoalMinutes: effectiveGoal,
       trackingMap,
       manualOverrideMap,
+      reportClearedMap,
       overrideMap,
       offDayMap,
       startDate: startStr,
@@ -1216,6 +1236,44 @@ router.delete('/users/:userId/off-day/:date', requireRole(...adminRoles), async 
     res.json({ message: 'Off day cleared' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to clear off day' });
+  }
+});
+
+// ─── Admin: Restore report-cleared daily progress ───
+router.post('/users/:userId/restore-report/:date', requireRole(...adminRoles), async (req, res) => {
+  try {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(req.params.date)) {
+      return res.status(400).json({ error: 'Invalid date format' });
+    }
+
+    const tracking = await TrackingData.findOne({
+      userId: req.params.userId,
+      date: req.params.date,
+    });
+    if (!tracking) return res.status(404).json({ error: 'No tracking data found for this date' });
+    if (!tracking.clearedByReports) return res.status(400).json({ error: 'This day was not cleared by reports' });
+    if (tracking.reportRestored) return res.status(400).json({ error: 'This day has already been restored' });
+
+    // Restore original time
+    tracking.seconds = tracking.preReportSeconds || 0;
+    tracking.reportRestored = true;
+    tracking.reportRestoredBy = req.user.userId;
+    tracking.reportRestoredAt = new Date();
+    await tracking.save();
+
+    await recalcUserStats(req.params.userId);
+
+    await AuditLog.create({
+      actorId: req.user.userId, actorRole: req.user.role,
+      targetId: req.params.userId, action: 'report_restore',
+      details: { date: req.params.date, restoredSeconds: tracking.seconds },
+      ip: req.ip,
+    });
+
+    logger.info(`Admin restored report-cleared progress for ${req.params.userId} on ${req.params.date}`, { source: 'admin' });
+    res.json({ message: 'Daily progress restored', seconds: tracking.seconds });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to restore progress' });
   }
 });
 

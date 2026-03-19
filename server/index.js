@@ -16,6 +16,7 @@ const groupRoutes = require('./routes/groups');
 const aiRoutes = require('./routes/ai');
 const notificationRoutes = require('./routes/notifications');
 const onboardingRoutes = require('./routes/onboarding');
+const reportRoutes = require('./routes/reports');
 const { maintenanceGate } = require('./middleware/guards');
 const { setupSocket } = require('./socket/handler');
 const { dailyStreakCleanup } = require('./utils/streaks');
@@ -100,6 +101,7 @@ app.use('/api/social', socialRoutes);
 app.use('/api/groups', groupRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/reports', reportRoutes);
 
 // SPA fallback — serve index.html for all client routes
 const spaPages = ['/app', '/login', '/register', '/admin', '/admin/*', '/leaderboard', '/settings', '/dashboard', '/friends', '/groups', '/streaks', '/setup', '/2fa-setup'];

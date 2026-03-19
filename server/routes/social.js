@@ -31,7 +31,7 @@ router.get('/friends', async (req, res) => {
 
     const friendIds = friendships.map(f => f.requester === uid ? f.recipient : f.requester);
     const friends = await User.find({ userId: { $in: friendIds }, active: true })
-      .select('userId username level currentStreak bestStreak totalStandingSeconds');
+      .select('userId username level currentStreak bestStreak totalStandingSeconds timerRunning timerStartedAt');
 
     // Get shared streaks
     const streakPromises = friendIds.map(fid => {
@@ -53,6 +53,8 @@ router.get('/friends', async (req, res) => {
       username: f.username,
       level: f.level,
       online: onlineUserIds.has(f.userId),
+      timerRunning: f.timerRunning || false,
+      timerStartedAt: f.timerStartedAt || null,
       sharedStreak: streakMap[f.userId] || { currentStreak: 0, bestStreak: 0 },
     }));
 
