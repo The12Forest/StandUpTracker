@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Bell, Check, CheckCheck, Flame, Target, Users, TrendingUp, Clock, UsersRound } from 'lucide-react';
+import { Bell, CheckCheck, Flame, Target, Users, TrendingUp, Clock, UsersRound } from 'lucide-react';
 import useNotificationStore from '../stores/useNotificationStore';
 
 const TYPE_ICONS = {

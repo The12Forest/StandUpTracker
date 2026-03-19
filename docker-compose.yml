@@ -8,13 +8,19 @@ services:
       MONGO_URI: mongodb://mongo:27017/standuptracker
     depends_on:
       mongo:
-        condition: service_started
+        condition: service_healthy
 
   mongo:
     image: mongo:7
     restart: unless-stopped
     volumes:
       - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
 volumes:
   mongo-data:
