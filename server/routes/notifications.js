@@ -140,7 +140,7 @@ router.put('/push/preferences', async (req, res) => {
     const update = {};
 
     if (pushPreferences && typeof pushPreferences === 'object') {
-      const allowed = ['standup_reminder', 'streak_at_risk', 'friend_request', 'level_up', 'daily_goal_reached'];
+      const allowed = ['standup_reminder', 'streak_at_risk', 'friend_request', 'level_up', 'daily_goal_reached', 'report_warning', 'report_cleared', 'admin_report_alert'];
       for (const key of allowed) {
         if (typeof pushPreferences[key] === 'boolean') {
           update[`pushPreferences.${key}`] = pushPreferences[key];

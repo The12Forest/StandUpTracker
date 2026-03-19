@@ -41,6 +41,7 @@ const DEFAULTS = {
 
   // Social / Features
   friendRequestsEnabled: { value: true, description: 'Enable friend requests and social features', section: 'social' },
+  firstDayOfWeek: { value: 'monday', description: 'First day of the week (monday or sunday) — affects week view, heatmap, streaks', section: 'social' },
 
   // Group Settings
   groupsEnabled: { value: true, description: 'Enable group creation and invitations', section: 'groups' },

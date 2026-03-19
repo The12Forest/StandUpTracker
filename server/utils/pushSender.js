@@ -59,6 +59,7 @@ async function sendPushNotification(userId, type, payload) {
       body: payload.body || '',
       icon: payload.icon || '/favicon.png',
       url: payload.url || '/dashboard',
+      tag: payload.tag || `sut-${type}-${Date.now()}`,
     });
 
     const results = await Promise.allSettled(

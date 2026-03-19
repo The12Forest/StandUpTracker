@@ -1,11 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Users, UserPlus, UserCheck, UserX, Flame, Calendar, Clock, X, Search, Trash2, Flag, Timer } from 'lucide-react';
+import { Users, UserPlus, UserCheck, UserX, Flame, Calendar, Clock, X, Search, Trash2, Timer } from 'lucide-react';
 import { api } from '../lib/api';
 import { BentoCard } from '../components/BentoCard';
 import GitHubHeatmap from '../components/GitHubHeatmap';
 import useToastStore from '../stores/useToastStore';
 import useSocketStore from '../stores/useSocketStore';
-import useAuthStore from '../stores/useAuthStore';
 
 const TABS = [
   { key: 'friends', label: 'Friends', icon: Users },
@@ -25,13 +24,8 @@ export default function SocialPage() {
   const [heatmapFriend, setHeatmapFriend] = useState(null);
   const [searchUser, setSearchUser] = useState('');
   const [sending, setSending] = useState(false);
-  const [reportModal, setReportModal] = useState(null); // { userId, username }
-  const [reportReason, setReportReason] = useState('');
-  const [reportedSessions, setReportedSessions] = useState(new Set());
-  const [reportSubmitting, setReportSubmitting] = useState(false);
   const toast = useToastStore();
   const socket = useSocketStore((s) => s.socket);
-  const currentUser = useAuthStore((s) => s.user);
   // Ref to track which friend streaks have already been fetched (avoids stale closure)
   const streaksFetchedRef = useRef(new Set());
 
@@ -163,38 +157,6 @@ export default function SocialPage() {
     } catch (err) { toast.error(err.message); }
   };
 
-  // Check which friends' sessions have already been reported
-  useEffect(() => {
-    friends.forEach(async (f) => {
-      if (f.timerRunning && f.userId !== currentUser?.userId) {
-        try {
-          const data = await api(`/api/reports/check/${f.userId}`);
-          if (data.reported) {
-            setReportedSessions(prev => new Set([...prev, f.userId]));
-          }
-        } catch { /* ignore */ }
-      }
-    });
-  }, [friends, currentUser?.userId]);
-
-  const submitReport = async () => {
-    if (!reportModal) return;
-    setReportSubmitting(true);
-    try {
-      const data = await api('/api/reports', {
-        method: 'POST',
-        body: JSON.stringify({ targetUserId: reportModal.userId, reason: reportReason }),
-      });
-      toast.success(data.message || 'Report submitted');
-      setReportedSessions(prev => new Set([...prev, reportModal.userId]));
-      setReportModal(null);
-      setReportReason('');
-    } catch (err) {
-      toast.error(err.data?.error || err.message);
-    }
-    setReportSubmitting(false);
-  };
-
   return (
     <div className="space-y-6 animate-fade-in">
       <h1 className="text-2xl font-bold text-zen-100">Friends</h1>
@@ -257,19 +219,6 @@ export default function SocialPage() {
                     <span className="text-[10px] text-accent-400 flex items-center gap-0.5 mr-1">
                       <Timer size={10} className="animate-pulse" /> Timer active
                     </span>
-                  )}
-                  {f.timerRunning && f.userId !== currentUser?.userId && (
-                    reportedSessions.has(f.userId) ? (
-                      <span className="text-[10px] text-zen-500 px-1.5 py-0.5 bg-zen-800 rounded">Reported</span>
-                    ) : (
-                      <button
-                        onClick={() => setReportModal({ userId: f.userId, username: f.username })}
-                        className="btn-ghost text-xs text-warn-400 hover:text-warn-300 flex items-center gap-0.5"
-                        title="Report timer abuse"
-                      >
-                        <Flag size={12} /> Report
-                      </button>
-                    )
                   )}
                   <button onClick={() => viewHeatmap(f)} className="btn-ghost text-xs flex items-center gap-1">
                     <Calendar size={14} /> Heatmap
@@ -350,35 +299,6 @@ export default function SocialPage() {
           </div>
           <p className="text-xs text-zen-600 mt-3">Type the exact username of the person you want to add.</p>
         </BentoCard>
-      )}
-
-      {/* Report Modal */}
-      {reportModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => { setReportModal(null); setReportReason(''); }}>
-          <div className="glass-card rounded-xl max-w-sm w-full p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-sm font-semibold text-zen-200 flex items-center gap-2">
-              <Flag size={16} className="text-warn-400" />
-              Report {reportModal.username}
-            </h3>
-            <p className="text-xs text-zen-500">
-              Report this user for having their timer running while not standing at their desk.
-            </p>
-            <textarea
-              value={reportReason}
-              onChange={(e) => setReportReason(e.target.value.slice(0, 200))}
-              className="glass-input w-full text-sm resize-none"
-              rows={3}
-              placeholder="Optional: describe why you are reporting (max 200 chars)"
-            />
-            <p className="text-[10px] text-zen-600 text-right">{reportReason.length}/200</p>
-            <div className="flex gap-2 justify-end">
-              <button onClick={() => { setReportModal(null); setReportReason(''); }} className="btn-ghost text-xs">Cancel</button>
-              <button onClick={submitReport} disabled={reportSubmitting} className="btn-accent text-xs">
-                {reportSubmitting ? 'Submitting...' : 'Submit Report'}
-              </button>
-            </div>
-          </div>
-        </div>
       )}
 
       {/* Heatmap Modal */}

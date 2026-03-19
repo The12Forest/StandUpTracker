@@ -158,6 +158,8 @@ function setupSocket(io) {
           startedAt: now.getTime(),
           serverTime: Date.now(),
         });
+        // Notify leaderboard viewers that a timer started
+        io.to('authenticated').emit('LEADERBOARD_UPDATE');
       } catch (err) {
         logger.warn(`Timer start failed for ${username}: ${err.message}`, { source: 'websocket' });
       }
@@ -239,6 +241,9 @@ function setupSocket(io) {
           // Fire-and-forget: sync friend & group streaks
           syncFriendStreaks(userId).catch(() => {});
           syncGroupStreaks(userId).catch(() => {});
+
+          // Notify leaderboard viewers
+          io.to('authenticated').emit('LEADERBOARD_UPDATE');
         }
 
         io.to(`user:${userId}`).emit('TIMER_SYNC', {

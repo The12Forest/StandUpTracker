@@ -27,9 +27,27 @@ export default function TimerPage() {
         <div className="timer-display text-6xl md:text-8xl font-bold text-zen-100 mb-2">
           {formatTime(running ? elapsed : 0)}
         </div>
-        <div className="text-sm text-zen-400 mb-8">
+        <div className="text-sm text-zen-400 mb-4">
           Today: {formatTime(displaySeconds)} ({formatMinutes(displaySeconds)} min)
         </div>
+
+        {/* Running session info: streak + goal progress */}
+        {running && (
+          <div className="flex items-center justify-center gap-6 mb-6 text-sm">
+            {(user?.currentStreak || 0) > 0 && (
+              <span className="flex items-center gap-1.5 text-orange-400">
+                <Flame size={16} />
+                <span className="font-semibold">{user.currentStreak}</span>
+                <span className="text-zen-500">day streak</span>
+              </span>
+            )}
+            <span className={`flex items-center gap-1.5 ${goalProgress >= 100 ? 'text-green-400' : 'text-accent-400'}`}>
+              <Target size={16} />
+              <span className="font-semibold">{Math.round(goalProgress)}%</span>
+              <span className="text-zen-500">of goal</span>
+            </span>
+          </div>
+        )}
 
         {/* Start/Stop button */}
         <button
