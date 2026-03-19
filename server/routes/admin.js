@@ -241,14 +241,22 @@ router.get('/stats', requireRole(...adminRoles), async (req, res) => {
 // ─── List users ───
 router.get('/users', requireRole(...adminRoles), async (req, res) => {
   try {
-    const { page = 1, limit = 50, search } = req.query;
+    const { page = 1, limit = 50, search, deleted } = req.query;
     const safeLimit = Math.min(parseInt(limit) || 50, 200);
     const query = {};
+    // Filter by deleted status
+    if (deleted === 'true') {
+      query.deletedAt = { $ne: null };
+    } else {
+      query.deletedAt = null;
+    }
     if (search) {
       const escaped = String(search).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       query.$or = [
         { username: { $regex: escaped, $options: 'i' } },
         { email: { $regex: escaped, $options: 'i' } },
+        { originalUsername: { $regex: escaped, $options: 'i' } },
+        { originalEmail: { $regex: escaped, $options: 'i' } },
       ];
     }
     const users = await User.find(query)
@@ -343,13 +351,33 @@ router.post('/users/bulk', requireRole('super_admin'), async (req, res) => {
         affected = safeIds.length;
         break;
       case 'delete':
-        // Soft-delete: scramble identifiable info
         for (const uid of safeIds) {
           const u = await User.findOne({ userId: uid });
-          if (u) {
+          if (u && u.role !== 'super_admin') {
+            const origUsername = u.username;
+            const origEmail = u.email;
+            // Build unique _deleted suffix
+            let suffix = '_deleted';
+            let candidate = `${u.username}${suffix}`;
+            let counter = 0;
+            while (await User.findOne({ username: candidate, userId: { $ne: u.userId } })) {
+              counter++;
+              candidate = `${u.username}_deleted_${counter}`;
+            }
+            const emailLocal = u.email.split('@')[0];
+            const emailDomain = u.email.split('@').slice(1).join('@');
+            let emailCandidate = `${emailLocal}_deleted@${emailDomain}`;
+            let emailCounter = 0;
+            while (await User.findOne({ email: emailCandidate, userId: { $ne: u.userId } })) {
+              emailCounter++;
+              emailCandidate = `${emailLocal}_deleted_${emailCounter}@${emailDomain}`;
+            }
             u.active = false;
-            u.username = `_deleted_${uid.slice(0, 8)}`;
-            u.email = `deleted_${uid.slice(0, 8)}@deleted.local`;
+            u.originalUsername = origUsername;
+            u.originalEmail = origEmail;
+            u.deletedAt = new Date();
+            u.username = candidate;
+            u.email = emailCandidate;
             await u.save();
             if (params.confirmHardDelete) {
               await TrackingData.deleteMany({ userId: uid });
@@ -889,26 +917,92 @@ router.delete('/users/:userId', requireRole('super_admin'), async (req, res) => 
     const io = req.app.get('io');
     if (io) io.in(`user:${user.userId}`).disconnectSockets(true);
 
+    const originalUsername = user.username;
+    const originalEmail = user.email;
+
     if (hardDelete) {
       await TrackingData.deleteMany({ userId: user.userId });
+      await DailyGoalOverride.deleteMany({ userId: user.userId });
+      await OffDay.deleteMany({ userId: user.userId });
+      await Friendship.deleteMany({ $or: [{ requesterId: user.userId }, { receiverId: user.userId }] });
+      await FriendStreak.deleteMany({ $or: [{ userId1: user.userId }, { userId2: user.userId }] });
+      await AiAdviceCache.deleteMany({ userId: user.userId });
+      const Notification = require('../models/Notification');
+      await Notification.deleteMany({ userId: user.userId });
       await user.deleteOne();
     } else {
+      // Build unique _deleted suffix
+      let suffix = '_deleted';
+      let candidate = `${user.username}${suffix}`;
+      let counter = 0;
+      while (await User.findOne({ username: candidate, userId: { $ne: user.userId } })) {
+        counter++;
+        candidate = `${user.username}_deleted_${counter}`;
+      }
+      const emailLocal = user.email.split('@')[0];
+      const emailDomain = user.email.split('@').slice(1).join('@');
+      let emailSuffix = '_deleted';
+      let emailCandidate = `${emailLocal}${emailSuffix}@${emailDomain}`;
+      let emailCounter = 0;
+      while (await User.findOne({ email: emailCandidate, userId: { $ne: user.userId } })) {
+        emailCounter++;
+        emailCandidate = `${emailLocal}_deleted_${emailCounter}@${emailDomain}`;
+      }
+
       user.active = false;
-      user.username = `_deleted_${user.userId.slice(0, 8)}`;
-      user.email = `deleted_${user.userId.slice(0, 8)}@deleted.local`;
+      user.originalUsername = originalUsername;
+      user.originalEmail = originalEmail;
+      user.deletedAt = new Date();
+      user.username = candidate;
+      user.email = emailCandidate;
       await user.save();
     }
 
     await AuditLog.create({
       actorId: req.user.userId, actorRole: req.user.role,
       targetId: user.userId, action: 'admin_delete_user',
-      details: { username: user.username, hardDelete: !!hardDelete }, ip: req.ip,
+      details: { originalUsername, originalEmail, hardDelete: !!hardDelete }, ip: req.ip,
     });
 
     logger.info(`Admin deleted user ${user.username} (hard=${!!hardDelete})`, { source: 'admin', userId: req.user.userId });
     res.json({ message: 'User deleted' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete user' });
+  }
+});
+
+// ─── Admin: Permanently delete a soft-deleted user ───
+router.delete('/users/:userId/permanent', requireRole('super_admin'), async (req, res) => {
+  try {
+    const user = await User.findOne({ userId: req.params.userId });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (!user.deletedAt) return res.status(400).json({ error: 'User is not soft-deleted. Soft-delete first.' });
+
+    const originalUsername = user.originalUsername || user.username;
+
+    // Remove all associated data
+    await TrackingData.deleteMany({ userId: user.userId });
+    await DailyGoalOverride.deleteMany({ userId: user.userId });
+    await OffDay.deleteMany({ userId: user.userId });
+    await Friendship.deleteMany({ $or: [{ requesterId: user.userId }, { receiverId: user.userId }] });
+    await FriendStreak.deleteMany({ $or: [{ userId1: user.userId }, { userId2: user.userId }] });
+    await AiAdviceCache.deleteMany({ userId: user.userId });
+    const Notification = require('../models/Notification');
+    await Notification.deleteMany({ userId: user.userId });
+    // Remove from groups
+    await Group.updateMany({ members: user.userId }, { $pull: { members: user.userId } });
+    await user.deleteOne();
+
+    await AuditLog.create({
+      actorId: req.user.userId, actorRole: req.user.role,
+      targetId: user.userId, action: 'admin_permanent_delete',
+      details: { originalUsername }, ip: req.ip,
+    });
+
+    logger.info(`Admin permanently deleted user ${originalUsername}`, { source: 'admin', userId: req.user.userId });
+    res.json({ message: 'User permanently deleted' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to permanently delete user' });
   }
 });
 

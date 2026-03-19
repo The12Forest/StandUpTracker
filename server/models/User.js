@@ -31,6 +31,9 @@ const userSchema = new mongoose.Schema({
   lastActiveAt: Date,
   blockedUntil: Date,
   geminiOptIn: { type: Boolean, default: false },
+  deletedAt: { type: Date, default: null },
+  originalUsername: { type: String, default: null },
+  originalEmail: { type: String, default: null },
   // Push notification preferences
   pushEnabled: { type: Boolean, default: false },
   pushPreferences: {

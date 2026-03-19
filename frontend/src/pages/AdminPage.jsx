@@ -342,16 +342,17 @@ function UsersTab() {
   const [selected, setSelected] = useState(new Set());
   const [passwordModal, setPasswordModal] = useState(null);
   const [newPw, setNewPw] = useState('');
+  const [viewDeleted, setViewDeleted] = useState(false);
   const toast = useToastStore();
   const navigate = useNavigate();
   const currentUser = useAuthStore((s) => s.user);
   const startImpersonation = useAuthStore((s) => s.startImpersonation);
 
   const fetchUsers = useCallback(() => {
-    api(`/api/admin/users?page=${page}&limit=20&search=${encodeURIComponent(search)}`)
+    api(`/api/admin/users?page=${page}&limit=20&search=${encodeURIComponent(search)}&deleted=${viewDeleted}`)
       .then((data) => { setUsers(data.users || []); setTotal(data.total || 0); })
       .catch(() => {});
-  }, [page, search]);
+  }, [page, search, viewDeleted]);
 
   useEffect(() => { fetchUsers(); }, [fetchUsers]);
 
@@ -406,6 +407,16 @@ function UsersTab() {
     } catch (err) { toast.error(err.message); }
   };
 
+  const handlePermanentDelete = async (userId, username) => {
+    if (!confirm(`PERMANENTLY delete "${username}"? This will remove ALL data for this user and cannot be undone.`)) return;
+    if (!confirm(`Are you absolutely sure? This action is IRREVERSIBLE.`)) return;
+    try {
+      await api(`/api/admin/users/${userId}/permanent`, { method: 'DELETE' });
+      toast.success('User permanently deleted');
+      fetchUsers();
+    } catch (err) { toast.error(err.message); }
+  };
+
   const handleBlockUser = async (userId, currentlyActive) => {
     try {
       await api(`/api/admin/users/${userId}/block`, {
@@ -440,17 +451,27 @@ function UsersTab() {
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-3">
+      <div className="flex gap-3 items-center">
+        <div className="flex bg-zen-900/60 border border-zen-700/40 rounded-lg p-0.5">
+          <button onClick={() => { setViewDeleted(false); setPage(1); setSelected(new Set()); }}
+            className={`px-3 py-1.5 text-xs rounded-md transition-colors ${!viewDeleted ? 'bg-accent-500/20 text-accent-400' : 'text-zen-500 hover:text-zen-300'}`}>
+            Active
+          </button>
+          <button onClick={() => { setViewDeleted(true); setPage(1); setSelected(new Set()); }}
+            className={`px-3 py-1.5 text-xs rounded-md transition-colors ${viewDeleted ? 'bg-danger-500/20 text-danger-400' : 'text-zen-500 hover:text-zen-300'}`}>
+            Deleted
+          </button>
+        </div>
         <div className="flex items-center gap-2 glass-input flex-1 !py-0">
           <Search size={14} className="text-zen-500 shrink-0" />
           <input type="text" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }}
             className="bg-transparent border-none outline-none flex-1 text-zen-100 placeholder:text-zen-500 py-3 text-sm"
-            placeholder="Search users..." />
+            placeholder={viewDeleted ? 'Search deleted users...' : 'Search users...'} />
         </div>
         <button onClick={fetchUsers} className="btn-ghost"><RefreshCw size={14} /></button>
       </div>
 
-      {isSuperAdmin && selected.size > 0 && (
+      {isSuperAdmin && !viewDeleted && selected.size > 0 && (
         <div className="flex gap-2 items-center text-xs flex-wrap">
           <span className="text-zen-400">{selected.size} selected:</span>
           <button onClick={() => bulkAction('activate')} className="btn-ghost text-xs text-accent-400">Activate</button>
@@ -486,78 +507,110 @@ function UsersTab() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-zen-700/30">
-                {isSuperAdmin && <th className="w-10 px-3"><input type="checkbox" onChange={(e) => { setSelected(e.target.checked ? new Set(users.map(u => u.userId)) : new Set()); }} className="accent-accent-500" /></th>}
+                {isSuperAdmin && !viewDeleted && <th className="w-10 px-3"><input type="checkbox" onChange={(e) => { setSelected(e.target.checked ? new Set(users.map(u => u.userId)) : new Set()); }} className="accent-accent-500" /></th>}
                 <th className="text-left text-xs text-zen-500 font-normal px-4 py-3">User</th>
                 <th className="text-left text-xs text-zen-500 font-normal px-4 py-3 hidden md:table-cell">Email</th>
                 <th className="text-left text-xs text-zen-500 font-normal px-4 py-3">Role</th>
                 <th className="text-left text-xs text-zen-500 font-normal px-4 py-3">Status</th>
+                {viewDeleted && <th className="text-left text-xs text-zen-500 font-normal px-4 py-3 hidden lg:table-cell">Deleted</th>}
                 <th className="text-right text-xs text-zen-500 font-normal px-4 py-3">Actions</th>
               </tr>
             </thead>
             <tbody>
               {users.map((u) => (
                 <tr key={u.userId} className="border-b border-zen-700/20 hover:bg-zen-800/30 transition-colors">
-                  {isSuperAdmin && <td className="px-3"><input type="checkbox" checked={selected.has(u.userId)} onChange={() => toggleSelect(u.userId)} className="accent-accent-500" /></td>}
+                  {isSuperAdmin && !viewDeleted && <td className="px-3"><input type="checkbox" checked={selected.has(u.userId)} onChange={() => toggleSelect(u.userId)} className="accent-accent-500" /></td>}
                   <td className="px-4 py-3">
                     <div className="text-sm text-zen-200">{u.username}</div>
+                    {viewDeleted && u.originalUsername && (
+                      <div className="text-[10px] text-zen-500">was: {u.originalUsername}</div>
+                    )}
                     <div className="text-[10px] text-zen-600 font-mono">{u.userId?.slice(0, 8)}</div>
                   </td>
                   <td className="px-4 py-3 hidden md:table-cell">
                     <div className="text-sm text-zen-400">{u.email}</div>
-                    <div className="flex items-center gap-1 mt-0.5">
-                      {u.emailVerified ? (
-                        <span className="text-[10px] text-accent-400">✓ Verified</span>
-                      ) : (
-                        <span className="text-[10px] text-warn-400">✗ Unverified</span>
-                      )}
-                      {u.totpEnabled && <span className="text-[10px] text-blue-400 ml-1">TOTP</span>}
-                      {u.email2faEnabled && <span className="text-[10px] text-blue-400 ml-1">Email2FA</span>}
-                    </div>
+                    {viewDeleted && u.originalEmail && (
+                      <div className="text-[10px] text-zen-500">was: {u.originalEmail}</div>
+                    )}
+                    {!viewDeleted && (
+                      <div className="flex items-center gap-1 mt-0.5">
+                        {u.emailVerified ? (
+                          <span className="text-[10px] text-accent-400">✓ Verified</span>
+                        ) : (
+                          <span className="text-[10px] text-warn-400">✗ Unverified</span>
+                        )}
+                        {u.totpEnabled && <span className="text-[10px] text-blue-400 ml-1">TOTP</span>}
+                        {u.email2faEnabled && <span className="text-[10px] text-blue-400 ml-1">Email2FA</span>}
+                      </div>
+                    )}
                   </td>
                   <td className="px-4 py-3">
-                    <select value={u.role} onChange={(e) => updateRole(u.userId, e.target.value)}
-                      className="bg-zen-800 border border-zen-700/50 rounded-lg text-xs text-zen-300 px-2 py-1"
-                      disabled={!isSuperAdmin || u.role === 'super_admin'}>
-                      <option value="user">User</option>
-                      <option value="moderator">Moderator</option>
-                      <option value="admin">Admin</option>
-                      <option value="super_admin">Super Admin</option>
-                    </select>
+                    {viewDeleted ? (
+                      <span className="text-xs text-zen-500">{u.role}</span>
+                    ) : (
+                      <select value={u.role} onChange={(e) => updateRole(u.userId, e.target.value)}
+                        className="bg-zen-800 border border-zen-700/50 rounded-lg text-xs text-zen-300 px-2 py-1"
+                        disabled={!isSuperAdmin || u.role === 'super_admin'}>
+                        <option value="user">User</option>
+                        <option value="moderator">Moderator</option>
+                        <option value="admin">Admin</option>
+                        <option value="super_admin">Super Admin</option>
+                      </select>
+                    )}
                   </td>
                   <td className="px-4 py-3">
-                    <span className={`text-xs px-2 py-1 rounded-lg ${u.active ? 'bg-accent-500/10 text-accent-400' : 'bg-danger-500/10 text-danger-400'}`}>
-                      {u.active ? 'Active' : 'Disabled'}
-                    </span>
+                    {viewDeleted ? (
+                      <span className="text-xs px-2 py-1 rounded-lg bg-danger-500/10 text-danger-400">Deleted</span>
+                    ) : (
+                      <span className={`text-xs px-2 py-1 rounded-lg ${u.active ? 'bg-accent-500/10 text-accent-400' : 'bg-danger-500/10 text-danger-400'}`}>
+                        {u.active ? 'Active' : 'Disabled'}
+                      </span>
+                    )}
                   </td>
+                  {viewDeleted && (
+                    <td className="px-4 py-3 hidden lg:table-cell">
+                      <span className="text-xs text-zen-500">{u.deletedAt ? new Date(u.deletedAt).toLocaleDateString() : '—'}</span>
+                    </td>
+                  )}
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-1 flex-wrap">
-                      <button onClick={() => navigate(`/admin/user/${u.userId}/times`)} className="text-[10px] px-1.5 py-0.5 rounded text-accent-400 hover:bg-accent-500/10 flex items-center gap-0.5" title="Edit Daily Times">
-                        <Clock size={11} /> Edit Time
-                      </button>
-                      {isSuperAdmin && u.role !== 'super_admin' && (
+                      {viewDeleted ? (
+                        isSuperAdmin && (
+                          <button onClick={() => handlePermanentDelete(u.userId, u.originalUsername || u.username)} className="text-[10px] px-1.5 py-0.5 rounded text-danger-400 hover:bg-danger-500/10 flex items-center gap-0.5" title="Permanently Delete">
+                            <Trash2 size={11} /> Permanently Delete
+                          </button>
+                        )
+                      ) : (
                         <>
-                          <button onClick={() => handleImpersonate(u.userId)} className="text-[10px] px-1.5 py-0.5 rounded text-warn-400 hover:bg-warn-500/10 flex items-center gap-0.5" title="Impersonate">
-                            <Eye size={11} /> View As
+                          <button onClick={() => navigate(`/admin/user/${u.userId}/times`)} className="text-[10px] px-1.5 py-0.5 rounded text-accent-400 hover:bg-accent-500/10 flex items-center gap-0.5" title="Edit Daily Times">
+                            <Clock size={11} /> Edit Time
                           </button>
-                          <button onClick={() => handleBlockUser(u.userId, u.active)} className="text-[10px] px-1.5 py-0.5 rounded text-zen-500 hover:bg-zen-700/50 flex items-center gap-0.5" title={u.active ? 'Deactivate' : 'Reactivate'}>
-                            {u.active ? <><Ban size={11} /> Deactivate</> : <><Unlock size={11} /> Reactivate</>}
-                          </button>
-                          {!u.emailVerified && (
-                            <button onClick={() => handleVerifyEmail(u.userId)} className="text-[10px] px-1.5 py-0.5 rounded text-accent-400 hover:bg-accent-500/10 flex items-center gap-0.5" title="Verify Email">
-                              <MailCheck size={11} /> Verify
-                            </button>
+                          {isSuperAdmin && u.role !== 'super_admin' && (
+                            <>
+                              <button onClick={() => handleImpersonate(u.userId)} className="text-[10px] px-1.5 py-0.5 rounded text-warn-400 hover:bg-warn-500/10 flex items-center gap-0.5" title="Impersonate">
+                                <Eye size={11} /> View As
+                              </button>
+                              <button onClick={() => handleBlockUser(u.userId, u.active)} className="text-[10px] px-1.5 py-0.5 rounded text-zen-500 hover:bg-zen-700/50 flex items-center gap-0.5" title={u.active ? 'Deactivate' : 'Reactivate'}>
+                                {u.active ? <><Ban size={11} /> Deactivate</> : <><Unlock size={11} /> Reactivate</>}
+                              </button>
+                              {!u.emailVerified && (
+                                <button onClick={() => handleVerifyEmail(u.userId)} className="text-[10px] px-1.5 py-0.5 rounded text-accent-400 hover:bg-accent-500/10 flex items-center gap-0.5" title="Verify Email">
+                                  <MailCheck size={11} /> Verify
+                                </button>
+                              )}
+                              {u.emailVerified && (
+                                <button onClick={() => handleForceReverify(u.userId, u.username)} className="text-[10px] px-1.5 py-0.5 rounded text-warn-400 hover:bg-warn-500/10 flex items-center gap-0.5" title="Force Re-verify">
+                                  <MailX size={11} /> Re-verify
+                                </button>
+                              )}
+                              <button onClick={() => setPasswordModal(u.userId)} className="text-[10px] px-1.5 py-0.5 rounded text-zen-500 hover:bg-zen-700/50 flex items-center gap-0.5" title="Set Password">
+                                <KeyRound size={11} /> Password
+                              </button>
+                              <button onClick={() => handleDeleteUser(u.userId, u.username)} className="text-[10px] px-1.5 py-0.5 rounded text-danger-400 hover:bg-danger-500/10 flex items-center gap-0.5" title="Delete">
+                                <Trash2 size={11} /> Delete
+                              </button>
+                            </>
                           )}
-                          {u.emailVerified && (
-                            <button onClick={() => handleForceReverify(u.userId, u.username)} className="text-[10px] px-1.5 py-0.5 rounded text-warn-400 hover:bg-warn-500/10 flex items-center gap-0.5" title="Force Re-verify">
-                              <MailX size={11} /> Re-verify
-                            </button>
-                          )}
-                          <button onClick={() => setPasswordModal(u.userId)} className="text-[10px] px-1.5 py-0.5 rounded text-zen-500 hover:bg-zen-700/50 flex items-center gap-0.5" title="Set Password">
-                            <KeyRound size={11} /> Password
-                          </button>
-                          <button onClick={() => handleDeleteUser(u.userId, u.username)} className="text-[10px] px-1.5 py-0.5 rounded text-danger-400 hover:bg-danger-500/10 flex items-center gap-0.5" title="Delete">
-                            <Trash2 size={11} /> Delete
-                          </button>
                         </>
                       )}
                     </div>
