@@ -8,6 +8,7 @@ const OffDay = require('../models/OffDay');
 const { syncFriendStreaks, syncGroupStreaks } = require('../utils/streaks');
 const { getEffectiveGoalMinutes, getSetting, getMinActivityThresholdSeconds } = require('../utils/settings');
 const { recalcUserStats } = require('../utils/recalcStats');
+const { sendPushNotification } = require('../utils/pushSender');
 
 const router = express.Router();
 
@@ -97,6 +98,9 @@ router.post('/timer/stop', requireVerified, currentDayGuard, async (req, res) =>
         todaySeconds,
       });
 
+      // Notify friends that this user's stats updated (for live heatmap refresh)
+      io.to(`friends:${req.user.userId}`).emit('FRIEND_STATS_UPDATE', { userId: req.user.userId });
+
       // Level up notification
       if (stats.level > oldLevel) {
         const titles = ['', 'Beginner', 'Starter', 'Regular', 'Dedicated', 'Veteran', 'Champion', 'Legend', 'Titan', 'Mythic', 'Eternal'];
@@ -108,6 +112,10 @@ router.post('/timer/stop', requireVerified, currentDayGuard, async (req, res) =>
           data: { level: stats.level },
         });
         io.to(`user:${req.user.userId}`).emit('NOTIFICATION', notif.toObject());
+        sendPushNotification(req.user.userId, 'level_up', {
+          title: 'StandUpTracker',
+          body: notif.message,
+        }).catch(() => {});
       }
 
       // Daily goal reached notification
@@ -120,6 +128,10 @@ router.post('/timer/stop', requireVerified, currentDayGuard, async (req, res) =>
           data: { minutes: Math.round(todayGoalSeconds / 60) },
         });
         io.to(`user:${req.user.userId}`).emit('NOTIFICATION', notif.toObject());
+        sendPushNotification(req.user.userId, 'daily_goal_reached', {
+          title: 'StandUpTracker',
+          body: notif.message,
+        }).catch(() => {});
       }
     }
 

@@ -7,7 +7,9 @@ const TrackingData = require('../models/TrackingData');
 const User = require('../models/User');
 const Settings = require('../models/Settings');
 const Notification = require('../models/Notification');
+const OffDay = require('../models/OffDay');
 const { getEffectiveGoalMinutes } = require('../utils/settings');
+const { sendPushNotification } = require('../utils/pushSender');
 
 const router = express.Router();
 
@@ -107,6 +109,10 @@ router.post('/request', requireVerified, async (req, res) => {
       data: { fromUserId: req.user.userId, fromUsername: req.user.username },
     });
     io.to(`user:${target.userId}`).emit('NOTIFICATION', notif.toObject());
+    sendPushNotification(target.userId, 'friend_request', {
+      title: 'StandUpTracker',
+      body: notif.message,
+    }).catch(() => {});
 
     res.status(201).json({ message: 'Friend request sent' });
   } catch (err) {
@@ -318,7 +324,16 @@ router.get('/friend/:userId/heatmap', async (req, res) => {
 
     const result = {};
     data.forEach(d => { result[d.date] = d.seconds; });
-    res.json({ heatmap: result });
+
+    // Return off days so heatmap can render them distinctly
+    const offDays = await OffDay.find({
+      userId: targetId,
+      date: { $gte: from.toISOString().slice(0, 10) },
+    });
+    const offDaySet = {};
+    offDays.forEach(o => { offDaySet[o.date] = true; });
+
+    res.json({ heatmap: result, offDays: offDaySet });
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch heatmap' });
   }

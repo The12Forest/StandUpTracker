@@ -3,6 +3,7 @@ const User = require('../models/User');
 const TrackingData = require('../models/TrackingData');
 const logger = require('./logger');
 const { getEffectiveGoalMinutes, isOffDay } = require('./settings');
+const { sendPushNotification } = require('./pushSender');
 
 /**
  * Runs periodically (e.g. every hour) to create scheduled notifications:
@@ -16,7 +17,7 @@ async function runNotificationScheduler(io) {
     const hour = now.getUTCHours();
     const todayStr = now.toISOString().slice(0, 10);
 
-    const users = await User.find({ active: true }).select('userId dailyGoalMinutes currentStreak');
+    const users = await User.find({ active: true }).select('userId dailyGoalMinutes currentStreak pushEnabled standupReminderTime');
 
     for (const user of users) {
       // Skip notifications for off days
@@ -27,8 +28,9 @@ async function runNotificationScheduler(io) {
       const tracking = await TrackingData.findOne({ userId: user.userId, date: todayStr });
       const todaySeconds = tracking?.seconds || 0;
 
-      // Standup reminder — send once per day around midday (12-13 UTC) if zero tracked
-      if (hour >= 12 && hour < 13 && todaySeconds === 0) {
+      // Standup reminder — send once per day at the user's preferred hour (default 12 UTC) if zero tracked
+      const reminderHour = user.standupReminderTime ? parseInt(user.standupReminderTime.split(':')[0], 10) : 12;
+      if (hour >= reminderHour && hour < reminderHour + 1 && todaySeconds === 0) {
         const existing = await Notification.findOne({
           userId: user.userId,
           type: 'standup_reminder',
@@ -42,6 +44,10 @@ async function runNotificationScheduler(io) {
             message: "You haven't tracked any standing time today. Start a session to keep your streak going!",
           });
           if (io) io.to(`user:${user.userId}`).emit('NOTIFICATION', notif.toObject());
+          sendPushNotification(user.userId, 'standup_reminder', {
+            title: 'StandUpTracker',
+            body: notif.message,
+          }).catch(() => {});
         }
       }
 
@@ -62,6 +68,10 @@ async function runNotificationScheduler(io) {
             data: { streakDays: user.currentStreak, remainingMinutes: remaining },
           });
           if (io) io.to(`user:${user.userId}`).emit('NOTIFICATION', notif.toObject());
+          sendPushNotification(user.userId, 'streak_at_risk', {
+            title: 'StandUpTracker',
+            body: notif.message,
+          }).catch(() => {});
         }
       }
     }

@@ -7,6 +7,7 @@ const logger = require('../utils/logger');
 const { getJwtSecret, getEffectiveGoalMinutes } = require('../utils/settings');
 const { syncFriendStreaks, syncGroupStreaks } = require('../utils/streaks');
 const { recalcUserStats } = require('../utils/recalcStats');
+const { sendPushNotification } = require('../utils/pushSender');
 
 // Global counter state — Single Source of Truth
 const counterState = {
@@ -205,6 +206,9 @@ function setupSocket(io) {
             todaySeconds: record.seconds,
           });
 
+          // Notify friends that this user's stats updated (for live heatmap refresh)
+          io.to(`friends:${userId}`).emit('FRIEND_STATS_UPDATE', { userId });
+
           // Level up notification
           if (stats.level > oldLevel) {
             const titles = ['', 'Beginner', 'Starter', 'Regular', 'Dedicated', 'Veteran', 'Champion', 'Legend', 'Titan', 'Mythic', 'Eternal'];
@@ -214,6 +218,9 @@ function setupSocket(io) {
               data: { level: stats.level },
             });
             io.to(`user:${userId}`).emit('NOTIFICATION', notif.toObject());
+            sendPushNotification(userId, 'level_up', {
+              title: 'StandUpTracker', body: notif.message,
+            }).catch(() => {});
           }
 
           // Goal reached notification
@@ -224,6 +231,9 @@ function setupSocket(io) {
               data: { minutes: Math.round(todayGoalSeconds / 60) },
             });
             io.to(`user:${userId}`).emit('NOTIFICATION', notif.toObject());
+            sendPushNotification(userId, 'daily_goal_reached', {
+              title: 'StandUpTracker', body: notif.message,
+            }).catch(() => {});
           }
 
           // Fire-and-forget: sync friend & group streaks

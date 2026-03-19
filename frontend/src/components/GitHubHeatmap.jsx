@@ -16,8 +16,12 @@ function getLevel(seconds) {
   return 4;
 }
 
-export default function GitHubHeatmap({ data = {}, darkMode = true }) {
+const OFF_DAY_COLOR_DARK = '#2d1f3d';
+const OFF_DAY_COLOR_LIGHT = '#e8d5f5';
+
+export default function GitHubHeatmap({ data = {}, offDays = {}, darkMode = true }) {
   const colors = darkMode ? COLORS_DARK : COLORS_LIGHT;
+  const offDayColor = darkMode ? OFF_DAY_COLOR_DARK : OFF_DAY_COLOR_LIGHT;
 
   const { weeks, monthLabels } = useMemo(() => {
     const today = new Date();
@@ -59,13 +63,14 @@ export default function GitHubHeatmap({ data = {}, darkMode = true }) {
         lastMonth = month;
       }
 
-      currentWeek[row] = { date: dateStr, seconds: val, level: getLevel(val) };
+      const isOff = !!offDays[dateStr];
+      currentWeek[row] = { date: dateStr, seconds: val, level: isOff ? -1 : getLevel(val) };
       cursor.setDate(cursor.getDate() + 1);
     }
     if (currentWeek.length > 0) weeksArr.push(currentWeek);
 
     return { weeks: weeksArr, monthLabels: months };
-  }, [data]);
+  }, [data, offDays]);
 
   const cellSize = 11;
   const gap = 3;
@@ -120,7 +125,7 @@ export default function GitHubHeatmap({ data = {}, darkMode = true }) {
                   height={cellSize}
                   rx={2}
                   ry={2}
-                  fill={colors[day.level]}
+                  fill={day.level === -1 ? offDayColor : colors[day.level]}
                 />
               ) : null
             )

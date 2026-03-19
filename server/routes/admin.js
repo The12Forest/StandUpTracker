@@ -1125,4 +1125,41 @@ router.delete('/users/:userId/off-day/:date', requireRole(...adminRoles), async 
   }
 });
 
+// ─── VAPID Key Generation ───
+router.post('/push/generate-vapid', requireRole('super_admin'), async (req, res) => {
+  try {
+    const webpush = require('web-push');
+    const vapidKeys = webpush.generateVAPIDKeys();
+
+    await Settings.set('vapidPublicKey', vapidKeys.publicKey);
+    await Settings.set('vapidPrivateKey', vapidKeys.privateKey);
+    invalidateCache();
+
+    // Reset cached VAPID config so new keys are picked up
+    const { resetVapidConfig } = require('../utils/pushSender');
+    resetVapidConfig();
+
+    // Remove all existing push subscriptions since old keys are now invalid
+    const PushSubscription = require('../models/PushSubscription');
+    const deleted = await PushSubscription.deleteMany({});
+
+    // Disable push for all users since their subscriptions are invalidated
+    await User.updateMany({ pushEnabled: true }, { $set: { pushEnabled: false } });
+
+    await AuditLog.create({
+      action: 'vapid_keys_regenerated',
+      actorId: req.user.userId,
+      actorRole: req.user.role,
+      details: { subscriptionsRemoved: deleted.deletedCount },
+    });
+
+    res.json({
+      publicKey: vapidKeys.publicKey,
+      message: `New VAPID keys generated. ${deleted.deletedCount} existing subscription(s) removed.`,
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to generate VAPID keys' });
+  }
+});
+
 module.exports = router;

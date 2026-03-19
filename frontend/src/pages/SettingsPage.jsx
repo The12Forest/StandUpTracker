@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
-import { Settings, User, Lock, Shield, Key, Mail, Sparkles, Copy } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Settings, User, Lock, Shield, Key, Mail, Sparkles, Copy, Bell, Clock } from 'lucide-react';
 import useAuthStore from '../stores/useAuthStore';
 import useToastStore from '../stores/useToastStore';
 import { api } from '../lib/api';
 import { BentoCard } from '../components/BentoCard';
+import { isPushSupported, subscribeToPush, unsubscribeFromPush, getPermissionState } from '../lib/pushNotifications';
 
 export default function SettingsPage() {
   const user = useAuthStore((s) => s.user);
@@ -23,12 +24,30 @@ export default function SettingsPage() {
   const [totpDisablePassword, setTotpDisablePassword] = useState('');
   const [showTotpDisablePrompt, setShowTotpDisablePrompt] = useState(false);
 
+  // Push notification state
+  const [pushEnabled, setPushEnabled] = useState(false);
+  const [pushLoading, setPushLoading] = useState(false);
+  const [pushError, setPushError] = useState('');
+  const [pushPrefs, setPushPrefs] = useState({
+    standup_reminder: true,
+    streak_at_risk: true,
+    friend_request: true,
+    level_up: true,
+    daily_goal_reached: true,
+  });
+  const [reminderTime, setReminderTime] = useState('12:00');
+
   useEffect(() => {
     if (user) {
       setProfile({
         dailyGoalMinutes: user.dailyGoalMinutes || 30,
         geminiOptIn: user.geminiOptIn || false,
       });
+      setPushEnabled(user.pushEnabled || false);
+      if (user.pushPreferences) {
+        setPushPrefs(prev => ({ ...prev, ...user.pushPreferences }));
+      }
+      setReminderTime(user.standupReminderTime || '12:00');
     }
   }, [user]);
 
@@ -86,6 +105,58 @@ export default function SettingsPage() {
       refreshUser();
     } catch (err) { toast.error(err.message); }
   };
+  const handlePushToggle = useCallback(async () => {
+    setPushLoading(true);
+    setPushError('');
+    if (!pushEnabled) {
+      // Enable push
+      const result = await subscribeToPush();
+      if (result.success) {
+        setPushEnabled(true);
+        refreshUser();
+        toast.success('Push notifications enabled');
+      } else {
+        setPushError(result.reason || 'Failed to enable push notifications');
+      }
+    } else {
+      // Disable push
+      const result = await unsubscribeFromPush();
+      if (result.success) {
+        setPushEnabled(false);
+        refreshUser();
+        toast.success('Push notifications disabled');
+      } else {
+        toast.error(result.reason || 'Failed to disable');
+      }
+    }
+    setPushLoading(false);
+  }, [pushEnabled, refreshUser, toast]);
+
+  const savePushPrefs = useCallback(async (newPrefs, newTime) => {
+    try {
+      await api('/api/notifications/push/preferences', {
+        method: 'PUT',
+        body: JSON.stringify({
+          pushPreferences: newPrefs,
+          standupReminderTime: newTime,
+        }),
+      });
+    } catch { /* silent save */ }
+  }, []);
+
+  const togglePushPref = useCallback((key) => {
+    setPushPrefs(prev => {
+      const updated = { ...prev, [key]: !prev[key] };
+      savePushPrefs(updated, reminderTime);
+      return updated;
+    });
+  }, [savePushPrefs, reminderTime]);
+
+  const handleReminderTimeChange = useCallback((value) => {
+    setReminderTime(value);
+    savePushPrefs(pushPrefs, value);
+  }, [savePushPrefs, pushPrefs]);
+
   const toggleEmail2FA = async () => {
     if (!showEmail2faPrompt) { setShowEmail2faPrompt(true); return; }
     if (!email2faPassword) { toast.error('Password required'); return; }
@@ -325,6 +396,94 @@ export default function SettingsPage() {
               </div>
             )}
           </div>
+        </div>
+      </BentoCard>
+
+      {/* Notifications */}
+      <BentoCard>
+        <div className="flex items-center gap-2 mb-4">
+          <Bell size={16} className="text-accent-400" />
+          <span className="text-sm font-semibold text-zen-200">Notifications</span>
+        </div>
+        <div className="space-y-4">
+          {/* Main push toggle */}
+          <div className="flex items-center justify-between py-2">
+            <div>
+              <p className="text-sm text-zen-200">Enable Browser Push Notifications</p>
+              <p className="text-xs text-zen-500 mt-0.5">
+                Receive OS-level notifications for reminders, streaks, and more
+              </p>
+            </div>
+            {isPushSupported() ? (
+              <button
+                onClick={handlePushToggle}
+                disabled={pushLoading}
+                className={`w-10 h-5 rounded-full transition-colors relative ${pushEnabled ? 'bg-accent-500' : 'bg-zen-700'} ${pushLoading ? 'opacity-50' : ''}`}
+              >
+                <div className={`w-4 h-4 bg-white rounded-full absolute top-0.5 transition-all ${pushEnabled ? 'left-5' : 'left-0.5'}`} />
+              </button>
+            ) : (
+              <span className="text-[10px] text-zen-500">Not supported in this browser</span>
+            )}
+          </div>
+
+          {pushError && (
+            <div className="bg-danger-500/10 border border-danger-500/20 rounded-lg p-3">
+              <p className="text-xs text-danger-400">{pushError}</p>
+            </div>
+          )}
+
+          {getPermissionState() === 'denied' && !pushEnabled && (
+            <div className="bg-warn-500/10 border border-warn-500/20 rounded-lg p-3">
+              <p className="text-xs text-warn-400">
+                Notification permission is blocked. To enable push notifications, click the lock icon in your browser address bar and allow notifications for this site.
+              </p>
+            </div>
+          )}
+
+          {/* Per-type toggles — only shown when push is enabled */}
+          {pushEnabled && (
+            <div className="border-t border-zen-700/30 pt-3 space-y-3">
+              <p className="text-xs text-zen-500 font-medium">Choose which notifications to receive:</p>
+
+              {[
+                { key: 'standup_reminder', label: 'Standup Reminder', desc: 'Daily reminder when no activity tracked' },
+                { key: 'streak_at_risk', label: 'Streak at Risk', desc: 'Warning when your streak might break' },
+                { key: 'friend_request', label: 'Friend Request', desc: 'When someone sends you a friend request' },
+                { key: 'level_up', label: 'Level Up', desc: 'When you reach a new level' },
+                { key: 'daily_goal_reached', label: 'Goal Reached', desc: 'When you hit your daily goal' },
+              ].map(({ key, label, desc }) => (
+                <div key={key} className="flex items-center justify-between py-1">
+                  <div>
+                    <p className="text-sm text-zen-300">{label}</p>
+                    <p className="text-[10px] text-zen-600">{desc}</p>
+                  </div>
+                  <button
+                    onClick={() => togglePushPref(key)}
+                    className={`w-10 h-5 rounded-full transition-colors relative ${pushPrefs[key] ? 'bg-accent-500' : 'bg-zen-700'}`}
+                  >
+                    <div className={`w-4 h-4 bg-white rounded-full absolute top-0.5 transition-all ${pushPrefs[key] ? 'left-5' : 'left-0.5'}`} />
+                  </button>
+                </div>
+              ))}
+
+              {/* Standup reminder time — only visible when standup_reminder is enabled */}
+              {pushPrefs.standup_reminder && (
+                <div className="flex items-center justify-between py-1 pl-4 border-l-2 border-accent-500/30">
+                  <div>
+                    <p className="text-sm text-zen-300 flex items-center gap-1"><Clock size={12} /> Reminder Time (UTC)</p>
+                    <p className="text-[10px] text-zen-600">When to send the daily standup reminder</p>
+                  </div>
+                  <input
+                    type="time"
+                    value={reminderTime}
+                    onChange={(e) => handleReminderTimeChange(e.target.value)}
+                    className="glass-input w-28 text-sm text-center"
+                  />
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </BentoCard>
     </div>

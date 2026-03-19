@@ -65,6 +65,11 @@ const DEFAULTS = {
   enforceDailyGoal: { value: false, description: 'Lock the daily goal for all users to the master value', section: 'enforcement' },
   enforce2fa: { value: false, description: 'Require all users to enable two-factor authentication', section: 'enforcement' },
 
+  // Push Notifications (VAPID)
+  vapidPublicKey: { value: '', description: 'VAPID public key for Web Push notifications', section: 'push' },
+  vapidPrivateKey: { value: '', description: 'VAPID private key for Web Push notifications (keep secret)', section: 'push' },
+  vapidContactEmail: { value: 'mailto:admin@example.com', description: 'Contact email for VAPID identification (mailto: prefix required)', section: 'push' },
+
   // Activity Thresholds
   minActivityThresholdMinutes: { value: 1, description: 'Minimum standing time (minutes) for a day to count in statistics. Days below this are excluded from stats and heatmap. Does not affect streaks.', section: 'thresholds' },
 

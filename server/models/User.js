@@ -31,6 +31,16 @@ const userSchema = new mongoose.Schema({
   lastActiveAt: Date,
   blockedUntil: Date,
   geminiOptIn: { type: Boolean, default: false },
+  // Push notification preferences
+  pushEnabled: { type: Boolean, default: false },
+  pushPreferences: {
+    standup_reminder: { type: Boolean, default: true },
+    streak_at_risk: { type: Boolean, default: true },
+    friend_request: { type: Boolean, default: true },
+    level_up: { type: Boolean, default: true },
+    daily_goal_reached: { type: Boolean, default: true },
+  },
+  standupReminderTime: { type: String, default: '12:00' }, // HH:MM in UTC
   // Active timer (server-authoritative)
   timerRunning: { type: Boolean, default: false },
   timerStartedAt: { type: Date, default: null },

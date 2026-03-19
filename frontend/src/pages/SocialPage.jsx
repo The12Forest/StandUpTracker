@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Users, UserPlus, UserCheck, UserX, Flame, Calendar, Clock, X, Search, Trash2 } from 'lucide-react';
 import { api } from '../lib/api';
 import { BentoCard } from '../components/BentoCard';
+import GitHubHeatmap from '../components/GitHubHeatmap';
 import useToastStore from '../stores/useToastStore';
 import useSocketStore from '../stores/useSocketStore';
 
@@ -19,6 +20,7 @@ export default function SocialPage() {
   const [onlineSet, setOnlineSet] = useState(new Set());
   const [streaks, setStreaks] = useState({});
   const [heatmap, setHeatmap] = useState(null);
+  const [heatmapOffDays, setHeatmapOffDays] = useState({});
   const [heatmapFriend, setHeatmapFriend] = useState(null);
   const [searchUser, setSearchUser] = useState('');
   const [sending, setSending] = useState(false);
@@ -63,15 +65,28 @@ export default function SocialPage() {
       loadFriends();
       loadRequests();
     };
+    // When a friend's stats update and their heatmap is open, refresh it
+    const onFriendStatsUpdate = (data) => {
+      if (data.userId && heatmapFriend?.userId === data.userId) {
+        api(`/api/social/friend/${data.userId}/heatmap`)
+          .then(resp => {
+            setHeatmap(resp.heatmap || {});
+            setHeatmapOffDays(resp.offDays || {});
+          })
+          .catch(() => {});
+      }
+    };
     socket.on('FRIEND_ONLINE', onOnline);
     socket.on('FRIEND_OFFLINE', onOffline);
     socket.on('FRIEND_ACCEPTED', onFriendAccepted);
+    socket.on('FRIEND_STATS_UPDATE', onFriendStatsUpdate);
     return () => {
       socket.off('FRIEND_ONLINE', onOnline);
       socket.off('FRIEND_OFFLINE', onOffline);
       socket.off('FRIEND_ACCEPTED', onFriendAccepted);
+      socket.off('FRIEND_STATS_UPDATE', onFriendStatsUpdate);
     };
-  }, [socket, loadFriends, loadRequests]);
+  }, [socket, loadFriends, loadRequests, heatmapFriend]);
 
   // Load shared streaks for each friend — use ref to avoid stale closure
   useEffect(() => {
@@ -136,12 +151,8 @@ export default function SocialPage() {
   const viewHeatmap = async (friend) => {
     try {
       const data = await api(`/api/social/friend/${friend.userId}/heatmap`);
-      // Convert { date: seconds } object to sorted array
-      const heatmapObj = data.heatmap || {};
-      const heatmapArr = Object.entries(heatmapObj)
-        .map(([date, seconds]) => ({ date, totalSeconds: seconds }))
-        .sort((a, b) => a.date.localeCompare(b.date));
-      setHeatmap(heatmapArr);
+      setHeatmap(data.heatmap || {});
+      setHeatmapOffDays(data.offDays || {});
       setHeatmapFriend(friend);
     } catch (err) { toast.error(err.message); }
   };
@@ -288,28 +299,17 @@ export default function SocialPage() {
       {/* Heatmap Modal */}
       {heatmap && heatmapFriend && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => { setHeatmap(null); setHeatmapFriend(null); }}>
-          <div className="glass-card rounded-xl max-w-2xl w-full p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+          <div className="glass-card rounded-xl max-w-3xl w-full p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-zen-100">{heatmapFriend.username}'s Activity</h3>
+              <h3 className="text-lg font-semibold text-zen-100">{heatmapFriend.username}&apos;s Activity</h3>
               <button onClick={() => { setHeatmap(null); setHeatmapFriend(null); }} className="text-zen-500 hover:text-zen-200">
                 <X size={20} />
               </button>
             </div>
-            <div className="grid grid-cols-7 gap-1">
-              {(heatmap || []).map((day, i) => {
-                const mins = day.totalSeconds / 60;
-                const intensity = Math.min(mins / 60, 1);
-                return (
-                  <div
-                    key={i}
-                    title={`${day.date}: ${Math.round(mins)}min`}
-                    className="aspect-square rounded-sm transition-colors"
-                    style={{ backgroundColor: mins > 0 ? `rgba(139, 92, 246, ${0.15 + intensity * 0.85})` : 'rgba(255,255,255,0.03)' }}
-                  />
-                );
-              })}
-            </div>
-            <p className="text-xs text-zen-500 text-center">Last 365 days — {(heatmap || []).filter(d => d.totalSeconds > 0).length} active days</p>
+            <GitHubHeatmap data={heatmap} offDays={heatmapOffDays} darkMode={true} />
+            <p className="text-xs text-zen-500 text-center">
+              Last 365 days — {Object.values(heatmap).filter(s => s > 0).length} active days
+            </p>
           </div>
         </div>
       )}

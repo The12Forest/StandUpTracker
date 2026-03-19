@@ -14,6 +14,7 @@ const auditLogSchema = new mongoose.Schema({
       'force_reverify', 'onboarding_complete',
       'daily_goal_override', 'daily_goal_override_clear',
       'off_day_set', 'off_day_clear',
+      'vapid_keys_regenerated',
     ],
     required: true,
     index: true,

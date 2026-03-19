@@ -634,6 +634,7 @@ const SECTION_LABELS = {
   groups: { label: 'Groups', icon: UsersRound, description: 'Group creation, limits, and streak settings' },
   emailAdmin: { label: 'Email Administration', icon: Mail, description: 'Force re-verification and email admin actions' },
   ai: { label: 'AI / Ollama', icon: Brain, description: 'Configure the Ollama AI endpoint, model, and feature toggle' },
+  push: { label: 'Push Notifications', icon: Wifi, description: 'VAPID keys for Web Push notifications' },
   thresholds: { label: 'Activity Thresholds', icon: Activity, description: 'Minimum activity requirements for statistics inclusion' },
   logging: { label: 'Logging', icon: ScrollText, description: 'Log levels and retention policies' },
   general: { label: 'Other Settings', icon: Sliders, description: 'Miscellaneous settings' },
@@ -647,8 +648,9 @@ function SettingsTab() {
   const [visiblePasswords, setVisiblePasswords] = useState({});
   const toast = useToastStore();
 
-  const SENSITIVE_KEYS = new Set(['smtpPass', 'jwtSecret']);
+  const SENSITIVE_KEYS = new Set(['smtpPass', 'jwtSecret', 'vapidPrivateKey']);
   const HIDDEN_KEYS = new Set(['defaultTheme']);
+  const [generatingVapid, setGeneratingVapid] = useState(false);
 
   const loadSettings = useCallback(() => {
     api('/api/admin/settings').then(setSettings).catch(() => {});
@@ -714,6 +716,9 @@ function SettingsTab() {
     enforceDailyGoal: 'When enabled, ALL users are locked to the master daily goal and cannot change it in their settings.',
     enforce2fa: 'When enabled, ALL users must have two-factor authentication enabled. Users without 2FA will be forced to set it up on their next login.',
     minActivityThresholdMinutes: 'Days where total standing time is below this value are excluded from statistics and heatmap activity. This does not affect streak calculations — use the daily goal setting for streak thresholds. Default: 1 minute.',
+    vapidPublicKey: 'Public VAPID key for Web Push. Share this with the browser to establish push subscriptions. Generated automatically via the button above.',
+    vapidPrivateKey: 'Private VAPID key used server-side to sign push messages. Keep this secret.',
+    vapidContactEmail: 'Contact email included in VAPID headers. Must start with "mailto:". Used by push services to contact the app operator if issues arise.',
   };
 
   // Group settings by section
@@ -725,7 +730,7 @@ function SettingsTab() {
     sections[section].push({ key, ...meta });
   }
 
-  const sectionOrder = ['enforcement', 'thresholds', 'server', 'security', 'client', 'mail', 'auth', 'social', 'groups', 'emailAdmin', 'ai', 'logging', 'general'];
+  const sectionOrder = ['enforcement', 'thresholds', 'push', 'server', 'security', 'client', 'mail', 'auth', 'social', 'groups', 'emailAdmin', 'ai', 'logging', 'general'];
 
   return (
     <div className="space-y-6">
@@ -743,6 +748,27 @@ function SettingsTab() {
                 {sectionInfo.description && <p className="text-[10px] text-zen-600">{sectionInfo.description}</p>}
               </div>
             </div>
+            {sectionKey === 'push' && (
+              <div className="bg-zen-800/40 rounded-lg p-3 space-y-2">
+                <p className="text-xs text-warn-400">Regenerating VAPID keys will invalidate all existing push subscriptions. Users will need to re-enable push notifications.</p>
+                <button
+                  onClick={async () => {
+                    setGeneratingVapid(true);
+                    try {
+                      const result = await api('/api/admin/push/generate-vapid', { method: 'POST' });
+                      useToastStore.getState().success(result.message || 'VAPID keys generated');
+                      loadSettings();
+                    } catch (err) { useToastStore.getState().error(err.message); }
+                    setGeneratingVapid(false);
+                  }}
+                  disabled={generatingVapid}
+                  className="btn-accent text-xs flex items-center gap-1"
+                >
+                  <KeyRound size={12} />
+                  {generatingVapid ? 'Generating...' : 'Generate New VAPID Keys'}
+                </button>
+              </div>
+            )}
             {items.map(({ key, value, description }) => (
               <div key={key} className="flex items-center gap-3 py-1">
                 <div className="w-56 shrink-0">
