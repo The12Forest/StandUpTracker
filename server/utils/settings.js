@@ -82,26 +82,63 @@ async function isSetupComplete() {
   }
 }
 
+/**
+ * Single source of truth for a user's effective daily goal.
+ * Priority: 1) Per-day override → 2) Admin enforcement → 3) User preference → 4) Default
+ */
 async function getEffectiveGoalMinutes(user, date) {
-  // If a specific date is provided, check for per-day admin override first
+  // Per-day override takes highest priority (set by admins per user per date)
   if (date) {
     const DailyGoalOverride = require('../models/DailyGoalOverride');
-    const override = await DailyGoalOverride.findOne({ userId: user.userId || user, date });
+    const uid = typeof user === 'string' ? user : user.userId;
+    const override = await DailyGoalOverride.findOne({ userId: uid, date });
     if (override) return override.goalMinutes;
   }
 
+  // Admin enforcement of master goal
   const enforced = await getSetting('enforceDailyGoal');
   if (enforced) {
     const masterGoal = await getSetting('masterDailyGoalMinutes');
     return masterGoal || 60;
   }
-  // Handle case where user is a userId string (not a full doc)
+
+  // User preference
   if (typeof user === 'string') {
     const User = require('../models/User');
     const userDoc = await User.findOne({ userId: user });
     return userDoc?.dailyGoalMinutes || 60;
   }
-  return user.dailyGoalMinutes;
+  return user.dailyGoalMinutes || 60;
+}
+
+/**
+ * Check if a specific date is marked as an off day for a user.
+ * Off days are excluded from streak calculations entirely.
+ */
+async function isOffDay(userId, date) {
+  const OffDay = require('../models/OffDay');
+  const uid = typeof userId === 'string' ? userId : userId.userId;
+  const doc = await OffDay.findOne({ userId: uid, date });
+  return !!doc;
+}
+
+/**
+ * Check if a day's activity meets the minimum threshold for statistics inclusion.
+ * Days below the threshold are excluded from all stats (active days, heatmap, etc.).
+ * Does NOT affect streak calculations.
+ */
+async function isDayCountedInStats(totalSeconds, _date) {
+  const threshold = await getSetting('minActivityThresholdMinutes');
+  const minSeconds = (threshold || 1) * 60;
+  return totalSeconds >= minSeconds;
+}
+
+/**
+ * Get the minimum activity threshold in seconds.
+ */
+async function getMinActivityThresholdSeconds() {
+  const threshold = await getSetting('minActivityThresholdMinutes');
+  return (threshold || 1) * 60;
 }
 
 module.exports = {
@@ -113,4 +150,7 @@ module.exports = {
   isSetupComplete,
   invalidateCache,
   getEffectiveGoalMinutes,
+  isOffDay,
+  isDayCountedInStats,
+  getMinActivityThresholdSeconds,
 };

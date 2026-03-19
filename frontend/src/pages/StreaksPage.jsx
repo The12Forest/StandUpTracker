@@ -24,6 +24,7 @@ export default function StreaksPage() {
       setFriendStreaks(fs.streaks || []);
       setThresholdMinutes(fs.thresholdMinutes || null);
       setGroups(gs.groups || []);
+    }).finally(() => {
       setLoading(false);
     });
   }, []);

@@ -140,7 +140,7 @@ async function start() {
       await mongoose.connect(uri);
       console.log('Using in-memory MongoDB at', uri);
     } catch (e) {
-      logger.error('MongoDB connection failed', e.message);
+      logger.error('MongoDB connection failed', { meta: { error: e.message } });
       process.exit(1);
     }
   }

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Users, UserPlus, Crown, LogOut, Trash2, Plus, Check, X, Flame, Clock, Search } from 'lucide-react';
 import { api } from '../lib/api';
 import { BentoCard } from '../components/BentoCard';
@@ -22,6 +22,7 @@ export default function GroupsPage() {
   const [creating, setCreating] = useState(false);
   const toast = useToastStore();
   const socket = useSocketStore((s) => s.socket);
+  const pendingGroupId = useRef(null);
 
   const loadGroups = useCallback(async () => {
     try {
@@ -55,17 +56,21 @@ export default function GroupsPage() {
       setExpanded(null);
       setDetail(null);
       setInviteUser('');
+      pendingGroupId.current = null;
       return;
     }
     // Clear previous state immediately to avoid showing stale data for the new group
     setExpanded(null);
     setDetail(null);
     setInviteUser('');
+    pendingGroupId.current = groupId;
     try {
       const data = await api(`/api/groups/${groupId}`);
       // Only apply if this group is still the intended target (prevents race on rapid clicks)
-      setDetail(data);
-      setExpanded(groupId);
+      if (pendingGroupId.current === groupId) {
+        setDetail(data);
+        setExpanded(groupId);
+      }
     } catch (err) { toast.error(err.message); }
   };
 

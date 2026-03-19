@@ -30,6 +30,19 @@ router.get('/unread-count', async (req, res) => {
   }
 });
 
+// Mark all as read (MUST be before /:id/read so Express doesn't capture "read-all" as an id)
+router.put('/read-all', async (req, res) => {
+  try {
+    await Notification.updateMany(
+      { userId: req.user.userId, read: false },
+      { $set: { read: true } }
+    );
+    res.json({ success: true });
+  } catch {
+    res.status(500).json({ error: 'Failed to mark notifications' });
+  }
+});
+
 // Mark one as read
 router.put('/:id/read', async (req, res) => {
   try {
@@ -40,19 +53,6 @@ router.put('/:id/read', async (req, res) => {
     res.json({ success: true });
   } catch {
     res.status(500).json({ error: 'Failed to mark notification' });
-  }
-});
-
-// Mark all as read
-router.put('/read-all', async (req, res) => {
-  try {
-    await Notification.updateMany(
-      { userId: req.user.userId, read: false },
-      { $set: { read: true } }
-    );
-    res.json({ success: true });
-  } catch {
-    res.status(500).json({ error: 'Failed to mark notifications' });
   }
 });
 

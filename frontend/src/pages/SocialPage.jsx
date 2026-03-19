@@ -126,6 +126,9 @@ export default function SocialPage() {
     try {
       await api(`/api/social/unfriend/${userId}`, { method: 'DELETE' });
       toast.success('Unfriended');
+      // Remove from the fetched-streaks cache so it reloads if re-added later
+      streaksFetchedRef.current.delete(userId);
+      setStreaks((prev) => { const next = { ...prev }; delete next[userId]; return next; });
       loadFriends();
     } catch (err) { toast.error(err.message); }
   };

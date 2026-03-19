@@ -84,7 +84,8 @@ export default function DashboardPage() {
       api('/api/stats'),
       api('/api/stats/extended'),
     ]).then(([t, s, e]) => {
-      setTracking(t);
+      // tracking endpoint now returns { tracking, offDays }
+      setTracking(t.tracking || t);
       setStats(s);
       setExtStats(e);
     }).catch(() => {});
@@ -171,7 +172,7 @@ export default function DashboardPage() {
   }, [tracking]);
   const prediction = predictDailyGoal(historyArr, user?.dailyGoalMinutes || 30);
 
-  const [nowTs, setNowTs] = useState(Date.now);
+  const [nowTs, setNowTs] = useState(() => Date.now());
   useEffect(() => {
     const id = setInterval(() => setNowTs(Date.now()), 60000);
     return () => clearInterval(id);

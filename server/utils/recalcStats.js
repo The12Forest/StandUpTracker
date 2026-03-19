@@ -1,11 +1,13 @@
 const TrackingData = require('../models/TrackingData');
 const DailyGoalOverride = require('../models/DailyGoalOverride');
+const OffDay = require('../models/OffDay');
 const User = require('../models/User');
 const { getEffectiveGoalMinutes } = require('./settings');
 
 /**
  * Recalculate a user's aggregate stats (totalSeconds, totalDays, streaks, level)
- * from TrackingData, respecting per-day goal overrides.
+ * from TrackingData, respecting per-day goal overrides and off days.
+ * Off days are skipped in streak calculations (streak pauses, doesn't break).
  * Updates the User document in-place.
  * Returns the computed stats object for optional use by callers.
  */
@@ -24,31 +26,45 @@ async function recalcUserStats(userId) {
   overrides.forEach(o => { overrideMap[o.date] = o.goalMinutes * 60; });
   const getGoalSecondsForDate = (date) => overrideMap[date] || defaultGoalSeconds;
 
-  const totalDays = allData.filter(d => d.seconds >= getGoalSecondsForDate(d.date)).length;
+  // Load off days into a Set for fast lookup
+  const offDays = await OffDay.find({ userId });
+  const offDaySet = new Set(offDays.map(o => o.date));
+
+  // totalDays: count of non-off days where seconds >= goal
+  const totalDays = allData.filter(d =>
+    !offDaySet.has(d.date) && d.seconds >= getGoalSecondsForDate(d.date)
+  ).length;
+
   const dataMap = {};
   allData.forEach(d => { dataMap[d.date] = d.seconds; });
-  const sorted = allData.map(d => d.date).sort().reverse();
 
-  // Current streak: walk backward from today
+  // Current streak: walk backward from today, skip off days
   let currentStreak = 0;
   const todayDate = new Date();
   for (let i = 0; i < 3650; i++) {
     const d = new Date(todayDate);
     d.setDate(d.getDate() - i);
     const dateStr = d.toISOString().slice(0, 10);
+    if (offDaySet.has(dateStr)) continue; // skip off days
     if ((dataMap[dateStr] || 0) >= getGoalSecondsForDate(dateStr)) currentStreak++;
     else break;
   }
 
-  // Best streak: walk forward through all tracked days
+  // Best streak: walk forward through all calendar days from first tracked to last, skip off days
   let bestStreak = 0, run = 0;
+  const sorted = allData.map(d => d.date).sort();
   if (sorted.length > 0) {
-    const firstDate = new Date(sorted[sorted.length - 1] + 'T00:00:00');
-    const lastDate = new Date(sorted[0] + 'T00:00:00');
+    const firstDate = new Date(sorted[0] + 'T00:00:00');
+    const lastDate = new Date(sorted[sorted.length - 1] + 'T00:00:00');
     for (let d = new Date(firstDate); d <= lastDate; d.setDate(d.getDate() + 1)) {
       const dateStr = d.toISOString().slice(0, 10);
-      if ((dataMap[dateStr] || 0) >= getGoalSecondsForDate(dateStr)) { run++; bestStreak = Math.max(bestStreak, run); }
-      else run = 0;
+      if (offDaySet.has(dateStr)) continue; // skip off days
+      if ((dataMap[dateStr] || 0) >= getGoalSecondsForDate(dateStr)) {
+        run++;
+        bestStreak = Math.max(bestStreak, run);
+      } else {
+        run = 0;
+      }
     }
   }
 

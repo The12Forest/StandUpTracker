@@ -1,21 +1,25 @@
 import { useEffect, useRef } from 'react';
-import { Bell, Check, CheckCheck, Flame, Target, Users, TrendingUp, Clock } from 'lucide-react';
+import { Bell, Check, CheckCheck, Flame, Target, Users, TrendingUp, Clock, UsersRound } from 'lucide-react';
 import useNotificationStore from '../stores/useNotificationStore';
 
 const TYPE_ICONS = {
   standup_reminder: Clock,
   streak_at_risk: Flame,
   friend_request: Users,
+  friend_request_accepted: Users,
   level_up: TrendingUp,
   daily_goal_reached: Target,
+  group_invite: UsersRound,
 };
 
 const TYPE_COLORS = {
   standup_reminder: 'text-warn-400',
   streak_at_risk: 'text-danger-400',
   friend_request: 'text-accent-400',
+  friend_request_accepted: 'text-accent-400',
   level_up: 'text-accent-400',
   daily_goal_reached: 'text-accent-400',
+  group_invite: 'text-accent-400',
 };
 
 function timeAgo(dateStr) {

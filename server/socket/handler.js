@@ -3,10 +3,10 @@ const User = require('../models/User');
 const Friendship = require('../models/Friendship');
 const Notification = require('../models/Notification');
 const TrackingData = require('../models/TrackingData');
-const DailyGoalOverride = require('../models/DailyGoalOverride');
 const logger = require('../utils/logger');
 const { getJwtSecret, getEffectiveGoalMinutes } = require('../utils/settings');
 const { syncFriendStreaks, syncGroupStreaks } = require('../utils/streaks');
+const { recalcUserStats } = require('../utils/recalcStats');
 
 // Global counter state — Single Source of Truth
 const counterState = {
@@ -144,12 +144,14 @@ function setupSocket(io) {
     socket.on('TIMER_START', async () => {
       try {
         if (!socket.user.emailVerified) return;
-        const u = await User.findOne({ userId });
-        if (!u || u.timerRunning) return;
         const now = new Date();
-        u.timerRunning = true;
-        u.timerStartedAt = now;
-        await u.save();
+        // Atomically start the timer only if it's not already running
+        const u = await User.findOneAndUpdate(
+          { userId, timerRunning: { $ne: true } },
+          { $set: { timerRunning: true, timerStartedAt: now } },
+          { new: true }
+        );
+        if (!u) return; // timer was already running
         io.to(`user:${userId}`).emit('TIMER_SYNC', {
           running: true,
           startedAt: now.getTime(),
@@ -164,16 +166,17 @@ function setupSocket(io) {
     socket.on('TIMER_STOP', async () => {
       try {
         if (!socket.user.emailVerified) return;
-        const u = await User.findOne({ userId });
-        if (!u || !u.timerRunning) return;
-        const startedAt = u.timerStartedAt;
         const now = new Date();
+        // Atomically stop the timer to prevent race conditions from concurrent events
+        const u = await User.findOneAndUpdate(
+          { userId, timerRunning: true },
+          { $set: { timerRunning: false, timerStartedAt: null } },
+          { new: false } // return doc BEFORE update to get timerStartedAt
+        );
+        if (!u) return; // timer wasn't running
+        const startedAt = u.timerStartedAt;
         const sessionMs = now.getTime() - startedAt.getTime();
         const sessionSeconds = Math.min(Math.max(Math.round(sessionMs / 1000), 0), 86400);
-
-        u.timerRunning = false;
-        u.timerStartedAt = null;
-        await u.save();
 
         // Save tracking
         if (sessionSeconds >= 1) {
@@ -187,71 +190,28 @@ function setupSocket(io) {
             { upsert: true, new: true }
           );
 
-          // Recalc stats
-          const allData = await TrackingData.find({ userId });
-          const totalSeconds = allData.reduce((sum, d) => sum + d.seconds, 0);
-          const effectiveGoal = await getEffectiveGoalMinutes(u);
-          const defaultGoalSeconds = effectiveGoal * 60;
-
-          // Load per-day overrides for accurate streak/totalDays
-          const overrides = await DailyGoalOverride.find({ userId });
-          const overrideMap = {};
-          overrides.forEach(o => { overrideMap[o.date] = o.goalMinutes * 60; });
-          const getGoalSeconds = (dt) => overrideMap[dt] || defaultGoalSeconds;
-
-          const totalDays = allData.filter(d => d.seconds >= getGoalSeconds(d.date)).length;
-          const dataMap = {};
-          allData.forEach(d => { dataMap[d.date] = d.seconds; });
-
-          const todayDate = new Date();
-          let currentStreak = 0;
-          for (let i = 0; i < 3650; i++) {
-            const d = new Date(todayDate);
-            d.setDate(d.getDate() - i);
-            const ds = d.toISOString().slice(0, 10);
-            if ((dataMap[ds] || 0) >= getGoalSeconds(ds)) currentStreak++;
-            else break;
-          }
-
-          let bestStreak = 0, run = 0;
-          const sorted = allData.map(d => d.date).sort();
-          if (sorted.length > 0) {
-            const first = new Date(sorted[0] + 'T00:00:00');
-            const last = new Date(sorted[sorted.length - 1] + 'T00:00:00');
-            for (let d = new Date(first); d <= last; d.setDate(d.getDate() + 1)) {
-              const ds = d.toISOString().slice(0, 10);
-              if ((dataMap[ds] || 0) >= getGoalSeconds(ds)) { run++; bestStreak = Math.max(bestStreak, run); }
-              else run = 0;
-            }
-          }
-
-          const hours = totalSeconds / 3600;
-          const levels = [0, 5, 15, 30, 60, 100, 200, 500, 1000, 2000];
-          let level = 1;
-          for (let i = levels.length - 1; i >= 0; i--) {
-            if (hours >= levels[i]) { level = i + 1; break; }
-          }
+          // Get previous total for goal-reached detection
+          const previousTotalSeconds = record.seconds - sessionSeconds;
+          const todayGoalSeconds = (await getEffectiveGoalMinutes(u, date)) * 60;
+          const goalReachedNow = record.seconds >= todayGoalSeconds && previousTotalSeconds < todayGoalSeconds;
 
           const oldLevel = u.level || 1;
-          const todayTotalSeconds = record.seconds;
-          const previousTotalSeconds = todayTotalSeconds - sessionSeconds;
-          const todayGoalSeconds = getGoalSeconds(date);
-          const goalReachedNow = todayTotalSeconds >= todayGoalSeconds && previousTotalSeconds < todayGoalSeconds;
 
-          await User.updateOne({ userId }, { totalStandingSeconds: totalSeconds, totalDays, currentStreak, bestStreak, level });
+          // Single source of truth: recalculate all stats
+          const stats = await recalcUserStats(userId);
 
           io.to(`user:${userId}`).emit('STATS_UPDATE', {
-            totalStandingSeconds: totalSeconds, totalDays, currentStreak, bestStreak, level,
-            todaySeconds: todayTotalSeconds,
+            ...stats,
+            todaySeconds: record.seconds,
           });
 
           // Level up notification
-          if (level > oldLevel) {
+          if (stats.level > oldLevel) {
             const titles = ['', 'Beginner', 'Starter', 'Regular', 'Dedicated', 'Veteran', 'Champion', 'Legend', 'Titan', 'Mythic', 'Eternal'];
             const notif = await Notification.create({
               userId, type: 'level_up', title: 'Level Up!',
-              message: `You reached Level ${level} — ${titles[level] || 'Master'}!`,
-              data: { level },
+              message: `You reached Level ${stats.level} — ${titles[stats.level] || 'Master'}!`,
+              data: { level: stats.level },
             });
             io.to(`user:${userId}`).emit('NOTIFICATION', notif.toObject());
           }

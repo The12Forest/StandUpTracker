@@ -48,7 +48,8 @@ const useSocketStore = create((set, get) => ({
         useAuthStore.setState({
           user: {
             ...currentUser,
-            totalStandingSeconds: data.totalStandingSeconds ?? currentUser.totalStandingSeconds,
+            // recalcUserStats returns totalSeconds; some paths emit totalStandingSeconds
+            totalStandingSeconds: data.totalStandingSeconds ?? data.totalSeconds ?? currentUser.totalStandingSeconds,
             totalDays: data.totalDays ?? currentUser.totalDays,
             currentStreak: data.currentStreak ?? currentUser.currentStreak,
             bestStreak: data.bestStreak ?? currentUser.bestStreak,

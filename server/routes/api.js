@@ -4,9 +4,10 @@ const { currentDayGuard, softBanCheck, lastActiveTouch } = require('../middlewar
 const TrackingData = require('../models/TrackingData');
 const Notification = require('../models/Notification');
 const User = require('../models/User');
-const DailyGoalOverride = require('../models/DailyGoalOverride');
+const OffDay = require('../models/OffDay');
 const { syncFriendStreaks, syncGroupStreaks } = require('../utils/streaks');
-const { getEffectiveGoalMinutes, getSetting } = require('../utils/settings');
+const { getEffectiveGoalMinutes, getSetting, getMinActivityThresholdSeconds } = require('../utils/settings');
+const { recalcUserStats } = require('../utils/recalcStats');
 
 const router = express.Router();
 
@@ -24,12 +25,14 @@ router.get('/timer/state', async (req, res) => {
 });
 
 router.post('/timer/start', requireVerified, async (req, res) => {
-  const u = await User.findOne({ userId: req.user.userId });
-  if (u.timerRunning) return res.status(409).json({ error: 'Timer already running' });
   const now = new Date();
-  u.timerRunning = true;
-  u.timerStartedAt = now;
-  await u.save();
+  // Atomically start the timer only if it's not already running
+  const u = await User.findOneAndUpdate(
+    { userId: req.user.userId, timerRunning: { $ne: true } },
+    { $set: { timerRunning: true, timerStartedAt: now } },
+    { new: true }
+  );
+  if (!u) return res.status(409).json({ error: 'Timer already running' });
 
   // Broadcast to all user devices
   const io = req.app.get('io');
@@ -45,19 +48,19 @@ router.post('/timer/start', requireVerified, async (req, res) => {
 });
 
 router.post('/timer/stop', requireVerified, currentDayGuard, async (req, res) => {
-  const u = await User.findOne({ userId: req.user.userId });
-  if (!u.timerRunning) return res.status(409).json({ error: 'Timer not running' });
+  // Atomically stop the timer to prevent race conditions from concurrent requests
+  const now = new Date();
+  const u = await User.findOneAndUpdate(
+    { userId: req.user.userId, timerRunning: true },
+    { $set: { timerRunning: false, timerStartedAt: null } },
+    { new: false } // return the document BEFORE the update to get timerStartedAt
+  );
+  if (!u) return res.status(409).json({ error: 'Timer not running' });
 
   const startedAt = u.timerStartedAt;
-  const now = new Date();
   const sessionMs = now.getTime() - startedAt.getTime();
   const sessionSeconds = Math.min(Math.max(Math.round(sessionMs / 1000), 0), 86400);
 
-  u.timerRunning = false;
-  u.timerStartedAt = null;
-  await u.save();
-
-  // Save tracking data inline
   let todaySeconds = 0;
   if (sessionSeconds >= 1) {
     const date = now.toISOString().slice(0, 10);
@@ -77,87 +80,32 @@ router.post('/timer/stop', requireVerified, currentDayGuard, async (req, res) =>
     );
     todaySeconds = record.seconds;
 
-    // Recalculate user aggregate stats
-    const allData = await TrackingData.find({ userId: req.user.userId });
-    const totalSeconds = allData.reduce((sum, d) => sum + d.seconds, 0);
-    const effectiveGoal = await getEffectiveGoalMinutes(u);
-    const defaultGoalSeconds = effectiveGoal * 60;
-
-    // Load per-day overrides for accurate streak/totalDays calculation
-    const overrides = await DailyGoalOverride.find({ userId: req.user.userId });
-    const overrideMap = {};
-    overrides.forEach(o => { overrideMap[o.date] = o.goalMinutes * 60; });
-    const getGoalSecondsForDate = (dt) => overrideMap[dt] || defaultGoalSeconds;
-
-    const totalDays = allData.filter(d => d.seconds >= getGoalSecondsForDate(d.date)).length;
-
-    const dataMap = {};
-    allData.forEach(d => { dataMap[d.date] = d.seconds; });
-
-    const todayDate = new Date();
-    let currentStreak = 0;
-    for (let i = 0; i < 3650; i++) {
-      const d = new Date(todayDate);
-      d.setDate(d.getDate() - i);
-      const dateStr = d.toISOString().slice(0, 10);
-      if ((dataMap[dateStr] || 0) >= getGoalSecondsForDate(dateStr)) currentStreak++;
-      else break;
-    }
-
-    let bestStreak = 0, run = 0;
-    const sorted = allData.map(d => d.date).sort();
-    if (sorted.length > 0) {
-      const firstDate = new Date(sorted[0] + 'T00:00:00');
-      const lastDate = new Date(sorted[sorted.length - 1] + 'T00:00:00');
-      for (let d = new Date(firstDate); d <= lastDate; d.setDate(d.getDate() + 1)) {
-        const dateStr = d.toISOString().slice(0, 10);
-        if ((dataMap[dateStr] || 0) >= getGoalSecondsForDate(dateStr)) { run++; bestStreak = Math.max(bestStreak, run); }
-        else run = 0;
-      }
-    }
-
-    const hours = totalSeconds / 3600;
-    const levels = [0, 5, 15, 30, 60, 100, 200, 500, 1000, 2000];
-    let level = 1;
-    for (let i = levels.length - 1; i >= 0; i--) {
-      if (hours >= levels[i]) { level = i + 1; break; }
-    }
+    // Get previous total for goal-reached detection
+    const previousTotalSeconds = todaySeconds - sessionSeconds;
+    const todayGoalSeconds = (await getEffectiveGoalMinutes(u, date)) * 60;
+    const goalReachedNow = todaySeconds >= todayGoalSeconds && previousTotalSeconds < todayGoalSeconds;
 
     const oldLevel = u.level || 1;
-    const todayTotalSeconds = record.seconds;
-    const previousTotalSeconds = todayTotalSeconds - sessionSeconds;
-    const todayGoalSeconds = getGoalSecondsForDate(date);
-    const goalReachedNow = todayTotalSeconds >= todayGoalSeconds && previousTotalSeconds < todayGoalSeconds;
 
-    await User.updateOne({ userId: req.user.userId }, {
-      totalStandingSeconds: totalSeconds,
-      totalDays,
-      currentStreak,
-      bestStreak,
-      level,
-    });
+    // Single source of truth: recalculate all stats
+    const stats = await recalcUserStats(req.user.userId);
 
     const io = req.app.get('io');
     if (io) {
-      // Emit real-time stats update to all user devices
       io.to(`user:${req.user.userId}`).emit('STATS_UPDATE', {
-        totalStandingSeconds: totalSeconds,
-        totalDays,
-        currentStreak,
-        bestStreak,
-        level,
-        todaySeconds: todayTotalSeconds,
+        ...stats,
+        todaySeconds,
       });
 
       // Level up notification
-      if (level > oldLevel) {
+      if (stats.level > oldLevel) {
         const titles = ['', 'Beginner', 'Starter', 'Regular', 'Dedicated', 'Veteran', 'Champion', 'Legend', 'Titan', 'Mythic', 'Eternal'];
         const notif = await Notification.create({
           userId: req.user.userId,
           type: 'level_up',
           title: 'Level Up!',
-          message: `You reached Level ${level} — ${titles[level] || 'Master'}!`,
-          data: { level },
+          message: `You reached Level ${stats.level} — ${titles[stats.level] || 'Master'}!`,
+          data: { level: stats.level },
         });
         io.to(`user:${req.user.userId}`).emit('NOTIFICATION', notif.toObject());
       }
@@ -190,9 +138,6 @@ router.post('/timer/stop', requireVerified, currentDayGuard, async (req, res) =>
     });
   }
 
-  // Include todaySeconds so client can set the correct total directly
-  // `record` is already the updated document from findOneAndUpdate above (new: true)
-  // Use it directly to avoid a redundant DB query
   res.json({ running: false, sessionSeconds, todaySeconds, serverTime: Date.now() });
 });
 
@@ -220,63 +165,8 @@ router.post('/tracking', requireVerified, currentDayGuard, async (req, res) => {
       { upsert: true, new: true }
     );
 
-    // Update user aggregate stats
-    const allData = await TrackingData.find({ userId: req.user.userId });
-    const totalSeconds = allData.reduce((sum, d) => sum + d.seconds, 0);
-    const effectiveGoalTracking = await getEffectiveGoalMinutes(req.user);
-    const defaultGoalSecondsT = effectiveGoalTracking * 60;
-
-    // Load per-day overrides for accurate streak/totalDays calculation
-    const overridesT = await DailyGoalOverride.find({ userId: req.user.userId });
-    const overrideMapT = {};
-    overridesT.forEach(o => { overrideMapT[o.date] = o.goalMinutes * 60; });
-    const getGoalSecondsT = (dt) => overrideMapT[dt] || defaultGoalSecondsT;
-
-    const totalDays = allData.filter(d => d.seconds >= getGoalSecondsT(d.date)).length;
-
-    // Calculate streaks (must account for consecutive calendar days)
-    const sorted = allData.map(d => d.date).sort().reverse();
-    let currentStreak = 0;
-    const dataMap = {};
-    allData.forEach(d => { dataMap[d.date] = d.seconds; });
-
-    // Walk backward from today, checking every calendar day
-    const todayDate = new Date();
-    for (let i = 0; i < 3650; i++) {
-      const d = new Date(todayDate);
-      d.setDate(d.getDate() - i);
-      const dateStr = d.toISOString().slice(0, 10);
-      if ((dataMap[dateStr] || 0) >= getGoalSecondsT(dateStr)) currentStreak++;
-      else break;
-    }
-
-    let bestStreak = 0, run = 0;
-    // Walk forward through all calendar days from first tracked to last
-    if (sorted.length > 0) {
-      const firstDate = new Date(sorted[sorted.length - 1] + 'T00:00:00');
-      const lastDate = new Date(sorted[0] + 'T00:00:00');
-      for (let d = new Date(firstDate); d <= lastDate; d.setDate(d.getDate() + 1)) {
-        const dateStr = d.toISOString().slice(0, 10);
-        if ((dataMap[dateStr] || 0) >= getGoalSecondsT(dateStr)) { run++; bestStreak = Math.max(bestStreak, run); }
-        else run = 0;
-      }
-    }
-
-    // Level calculation
-    const hours = totalSeconds / 3600;
-    const levels = [0, 5, 15, 30, 60, 100, 200, 500, 1000, 2000];
-    let level = 1;
-    for (let i = levels.length - 1; i >= 0; i--) {
-      if (hours >= levels[i]) { level = i + 1; break; }
-    }
-
-    await User.updateOne({ userId: req.user.userId }, {
-      totalStandingSeconds: totalSeconds,
-      totalDays,
-      currentStreak,
-      bestStreak,
-      level,
-    });
+    // Single source of truth: recalculate all stats
+    await recalcUserStats(req.user.userId);
 
     res.json({ success: true, record });
 
@@ -299,9 +189,15 @@ router.get('/tracking', requireVerified, async (req, res) => {
       if (to) query.date.$lte = to;
     }
     const data = await TrackingData.find(query).sort({ date: -1 }).limit(365);
+
+    // Also return off days so frontend can render them
+    const offDays = await OffDay.find({ userId: req.user.userId });
+    const offDaySet = {};
+    offDays.forEach(o => { offDaySet[o.date] = true; });
+
     const result = {};
     data.forEach(d => { result[d.date] = d.seconds; });
-    res.json(result);
+    res.json({ tracking: result, offDays: offDaySet });
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch tracking data' });
   }
@@ -310,7 +206,7 @@ router.get('/tracking', requireVerified, async (req, res) => {
 // Bulk sync (for initial migration from localStorage)
 router.post('/tracking/sync', requireVerified, async (req, res) => {
   try {
-    const { data } = req.body; // { "2024-01-01": 3600, ... }
+    const { data } = req.body;
     if (!data || typeof data !== 'object') {
       return res.status(400).json({ error: 'Data object required' });
     }
@@ -323,8 +219,8 @@ router.post('/tracking/sync', requireVerified, async (req, res) => {
 
     const ops = [];
     for (const [date, seconds] of entries) {
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue; // skip invalid dates
-      if (date > today) continue; // skip future dates
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+      if (date > today) continue;
       const clampedSeconds = Math.min(Math.max(Math.round(Number(seconds)), 0), 86400);
       if (!isNaN(clampedSeconds)) {
         ops.push({
@@ -341,49 +237,11 @@ router.post('/tracking/sync', requireVerified, async (req, res) => {
       await TrackingData.bulkWrite(ops);
     }
 
-    // Recalculate user aggregate stats after bulk sync
+    // Single source of truth: recalculate all stats
+    await recalcUserStats(req.user.userId);
+
     const allData = await TrackingData.find({ userId: req.user.userId });
     const totalSeconds = allData.reduce((sum, d) => sum + d.seconds, 0);
-    const effectiveGoal = await getEffectiveGoalMinutes(req.user);
-    const defaultGoalSecondsS = effectiveGoal * 60;
-
-    // Load per-day overrides for accurate streak/totalDays calculation
-    const overridesS = await DailyGoalOverride.find({ userId: req.user.userId });
-    const overrideMapS = {};
-    overridesS.forEach(o => { overrideMapS[o.date] = o.goalMinutes * 60; });
-    const getGoalSecondsS = (dt) => overrideMapS[dt] || defaultGoalSecondsS;
-
-    const totalDays = allData.filter(d => d.seconds >= getGoalSecondsS(d.date)).length;
-    const dataMap = {};
-    allData.forEach(d => { dataMap[d.date] = d.seconds; });
-
-    const todayDate = new Date();
-    let currentStreak = 0;
-    for (let i = 0; i < 3650; i++) {
-      const d = new Date(todayDate);
-      d.setDate(d.getDate() - i);
-      const ds = d.toISOString().slice(0, 10);
-      if ((dataMap[ds] || 0) >= getGoalSecondsS(ds)) currentStreak++;
-      else break;
-    }
-    let bestStreak = 0, run = 0;
-    const sorted = allData.map(d => d.date).sort();
-    if (sorted.length > 0) {
-      const first = new Date(sorted[0] + 'T00:00:00');
-      const last = new Date(sorted[sorted.length - 1] + 'T00:00:00');
-      for (let d = new Date(first); d <= last; d.setDate(d.getDate() + 1)) {
-        const ds = d.toISOString().slice(0, 10);
-        if ((dataMap[ds] || 0) >= getGoalSecondsS(ds)) { run++; bestStreak = Math.max(bestStreak, run); }
-        else run = 0;
-      }
-    }
-    const hours = totalSeconds / 3600;
-    const levels = [0, 5, 15, 30, 60, 100, 200, 500, 1000, 2000];
-    let level = 1;
-    for (let i = levels.length - 1; i >= 0; i--) {
-      if (hours >= levels[i]) { level = i + 1; break; }
-    }
-    await User.updateOne({ userId: req.user.userId }, { totalStandingSeconds: totalSeconds, totalDays, currentStreak, bestStreak, level });
 
     res.json({ message: `Synced ${ops.length} records`, synced: ops.length, totalSeconds });
   } catch (err) {
@@ -413,6 +271,11 @@ router.get('/stats/extended', requireVerified, async (req, res) => {
     const effectiveGoal = await getEffectiveGoalMinutes(req.user);
     const goalSeconds = effectiveGoal * 60;
     const enforceDailyGoal = await getSetting('enforceDailyGoal');
+    const minThresholdSeconds = await getMinActivityThresholdSeconds();
+
+    // Load off days
+    const offDays = await OffDay.find({ userId });
+    const offDaySet = new Set(offDays.map(o => o.date));
 
     const levels = [0, 5, 15, 30, 60, 100, 200, 500, 1000, 2000];
     const totalSeconds = allData.reduce((sum, d) => sum + d.seconds, 0);
@@ -424,7 +287,12 @@ router.get('/stats/extended', requireVerified, async (req, res) => {
       ? Math.min(100, Math.round(((totalHours - currentLevelThreshold) / (nextLevelThreshold - currentLevelThreshold)) * 100))
       : 100;
 
-    // Personal records
+    // Filter out off days and days below activity threshold for stats
+    const statsData = allData.filter(d =>
+      !offDaySet.has(d.date) && d.seconds >= minThresholdSeconds
+    );
+
+    // Personal records (using statsData — excludes off days and below-threshold)
     let longestSession = null;
     let bestDay = null;
     let totalSessions = 0;
@@ -433,6 +301,9 @@ router.get('/stats/extended', requireVerified, async (req, res) => {
 
     for (const rec of allData) {
       dayMap[rec.date] = rec.seconds;
+    }
+
+    for (const rec of statsData) {
       const sessions = rec.sessions || [];
       totalSessions += sessions.length;
       for (const s of sessions) {
@@ -447,20 +318,18 @@ router.get('/stats/extended', requireVerified, async (req, res) => {
       }
     }
 
-    // Best week / month
+    // Best week / month (using statsData)
     let bestWeek = { seconds: 0, weekStart: null };
     let bestMonth = { seconds: 0, month: null };
     const monthTotals = {};
     const weekTotals = {};
 
-    for (const rec of allData) {
-      // Month
+    for (const rec of statsData) {
       const month = rec.date.slice(0, 7);
       monthTotals[month] = (monthTotals[month] || 0) + rec.seconds;
       if (monthTotals[month] > bestMonth.seconds) {
         bestMonth = { seconds: monthTotals[month], month };
       }
-      // ISO week (Monday start)
       const d = new Date(rec.date + 'T00:00:00');
       const dayOfWeek = d.getDay() || 7;
       const monday = new Date(d);
@@ -495,14 +364,17 @@ router.get('/stats/extended', requireVerified, async (req, res) => {
     const lastMonthSecs = monthTotals[lastMonthKey] || 0;
     const monthOverMonthChange = lastMonthSecs > 0 ? Math.round(((thisMonthSecs - lastMonthSecs) / lastMonthSecs) * 100) : (thisMonthSecs > 0 ? 100 : 0);
 
-    // Consistency score (last 30 days)
+    // Consistency score (last 30 non-off days)
     let goalMetLast30 = 0;
-    for (let i = 0; i < 30; i++) {
+    let countedDays30 = 0;
+    for (let i = 0; i < 60 && countedDays30 < 30; i++) {
       const d = new Date(); d.setDate(d.getDate() - i);
       const ds = d.toISOString().slice(0, 10);
+      if (offDaySet.has(ds)) continue;
+      countedDays30++;
       if ((dayMap[ds] || 0) >= goalSeconds) goalMetLast30++;
     }
-    const consistencyScore = Math.round((goalMetLast30 / 30) * 100);
+    const consistencyScore = countedDays30 > 0 ? Math.round((goalMetLast30 / countedDays30) * 100) : 0;
 
     // Goal tracking
     let goalMetThisWeek = 0;
@@ -511,21 +383,21 @@ router.get('/stats/extended', requireVerified, async (req, res) => {
       d.setDate(d.getDate() + i);
       if (d > now) break;
       const ds = d.toISOString().slice(0, 10);
+      if (offDaySet.has(ds)) continue;
       if ((dayMap[ds] || 0) >= goalSeconds) goalMetThisWeek++;
     }
 
     const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     let goalMetThisMonth = 0;
-    let daysInMonthSoFar = 0;
     for (let d = new Date(thisMonthStart); d <= now; d.setDate(d.getDate() + 1)) {
-      daysInMonthSoFar++;
       const ds = d.toISOString().slice(0, 10);
+      if (offDaySet.has(ds)) continue;
       if ((dayMap[ds] || 0) >= goalSeconds) goalMetThisMonth++;
     }
 
-    // All-time goal completion rate
-    const totalTrackedDays = allData.length;
-    const totalGoalMet = allData.filter(d => d.seconds >= goalSeconds).length;
+    // All-time goal completion rate (excluding off days and below-threshold days)
+    const totalTrackedDays = statsData.length;
+    const totalGoalMet = statsData.filter(d => d.seconds >= goalSeconds).length;
     const goalCompletionRate = totalTrackedDays > 0 ? Math.round((totalGoalMet / totalTrackedDays) * 100) : 0;
 
     res.json({

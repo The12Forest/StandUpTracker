@@ -12,6 +12,7 @@ const AuditLog = require('../models/AuditLog');
 const Friendship = require('../models/Friendship');
 const Group = require('../models/Group');
 const DailyGoalOverride = require('../models/DailyGoalOverride');
+const OffDay = require('../models/OffDay');
 const FriendStreak = require('../models/FriendStreak');
 const AiAdviceCache = require('../models/AiAdviceCache');
 const { recalcUserStats } = require('../utils/recalcStats');
@@ -98,7 +99,7 @@ router.get('/stats', requireRole(...adminRoles), async (req, res) => {
     if (io) {
       const sockets = await io.fetchSockets();
       for (const s of sockets) {
-        if (s.data?.userId) onlineUserIds.add(s.data.userId);
+        if (s.user?.userId) onlineUserIds.add(s.user.userId);
       }
     }
 
@@ -567,7 +568,9 @@ router.delete('/tracking/:userId/:date/override', requireRole(...adminRoles), as
 // ─── Logs ───
 router.get('/logs', requireRole(...adminRoles), async (req, res) => {
   try {
-    const { level, page = 1, limit = 100, search } = req.query;
+    const { level, search } = req.query;
+    const pageNum = Math.max(1, parseInt(req.query.page) || 1);
+    const limitNum = Math.min(parseInt(req.query.limit) || 100, 500);
     const query = {};
     if (level) query.level = level.toUpperCase();
     if (search) {
@@ -577,10 +580,10 @@ router.get('/logs', requireRole(...adminRoles), async (req, res) => {
 
     const logs = await Log.find(query)
       .sort({ createdAt: -1 })
-      .skip((page - 1) * limit)
-      .limit(parseInt(limit));
+      .skip((pageNum - 1) * limitNum)
+      .limit(limitNum);
     const total = await Log.countDocuments(query);
-    res.json({ logs, total, page: parseInt(page), pages: Math.ceil(total / limit) });
+    res.json({ logs, total, page: pageNum, pages: Math.ceil(total / limitNum) });
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch logs' });
   }
@@ -589,13 +592,15 @@ router.get('/logs', requireRole(...adminRoles), async (req, res) => {
 // ─── Audit Logs (super_admin only) ───
 router.get('/audit', requireRole('super_admin'), async (req, res) => {
   try {
-    const { page = 1, limit = 50, action } = req.query;
+    const { action } = req.query;
+    const pageNum = Math.max(1, parseInt(req.query.page) || 1);
+    const limitNum = Math.min(parseInt(req.query.limit) || 50, 200);
     const query = {};
     if (action) query.action = action;
     const logs = await AuditLog.find(query).sort({ createdAt: -1 })
-      .skip((page - 1) * limit).limit(parseInt(limit));
+      .skip((pageNum - 1) * limitNum).limit(limitNum);
     const total = await AuditLog.countDocuments(query);
-    res.json({ logs, total, page: parseInt(page), pages: Math.ceil(total / limit) });
+    res.json({ logs, total, page: pageNum, pages: Math.ceil(total / limitNum) });
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch audit logs' });
   }
@@ -720,12 +725,16 @@ router.get('/stats/extended', requireRole(...adminRoles), async (req, res) => {
     const groupSizes = allGroups.map(g => g.members?.length || 0);
     const avgGroupSize = groupSizes.length > 0 ? (groupSizes.reduce((a, b) => a + b, 0) / groupSizes.length).toFixed(1) : 0;
 
-    const largestGroups = await Group.find({}).sort({ 'members': -1 }).limit(5).select('groupId name members');
-    const largestGroupsList = largestGroups.map(g => ({
+    const largestGroupsAgg = await Group.aggregate([
+      { $project: { groupId: 1, name: 1, members: 1, memberCount: { $size: { $ifNull: ['$members', []] } } } },
+      { $sort: { memberCount: -1 } },
+      { $limit: 5 },
+    ]);
+    const largestGroupsList = largestGroupsAgg.map(g => ({
       groupId: g.groupId,
       name: g.name,
-      memberCount: g.members?.length || 0,
-    })).sort((a, b) => b.memberCount - a.memberCount);
+      memberCount: g.memberCount,
+    }));
 
     // Active groups: at least one member tracked in last 7 days
     const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7);
@@ -970,6 +979,14 @@ router.get('/users/:userId/daily-times', requireRole(...adminRoles), async (req,
     const overrideMap = {};
     overrides.forEach(o => { overrideMap[o.date] = o.goalMinutes; });
 
+    // Get off days in range
+    const offDays = await OffDay.find({
+      userId: req.params.userId,
+      date: { $gte: startStr, $lte: endStr },
+    });
+    const offDayMap = {};
+    offDays.forEach(o => { offDayMap[o.date] = true; });
+
     res.json({
       userId: user.userId,
       username: user.username,
@@ -977,6 +994,7 @@ router.get('/users/:userId/daily-times', requireRole(...adminRoles), async (req,
       trackingMap,
       manualOverrideMap,
       overrideMap,
+      offDayMap,
       startDate: startStr,
       endDate: endStr,
     });
@@ -1046,6 +1064,64 @@ router.delete('/users/:userId/daily-goal/:date', requireRole(...adminRoles), asy
     res.json({ message: 'Override cleared' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to clear override' });
+  }
+});
+
+// ─── Admin: Set/unset off day ───
+router.put('/users/:userId/off-day/:date', requireRole(...adminRoles), async (req, res) => {
+  try {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(req.params.date)) {
+      return res.status(400).json({ error: 'Invalid date format (YYYY-MM-DD required)' });
+    }
+
+    await OffDay.findOneAndUpdate(
+      { userId: req.params.userId, date: req.params.date },
+      { $setOnInsert: { userId: req.params.userId, date: req.params.date } },
+      { upsert: true }
+    );
+
+    // Recalc stats since off day affects streaks
+    await recalcUserStats(req.params.userId);
+
+    await AuditLog.create({
+      actorId: req.impersonator?.userId || req.user.userId,
+      actorRole: req.impersonator?.role || req.user.role,
+      targetId: req.params.userId, action: 'off_day_set',
+      details: { date: req.params.date },
+      ip: req.ip,
+    });
+
+    res.json({ message: 'Off day set' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to set off day' });
+  }
+});
+
+router.delete('/users/:userId/off-day/:date', requireRole(...adminRoles), async (req, res) => {
+  try {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(req.params.date)) {
+      return res.status(400).json({ error: 'Invalid date format' });
+    }
+
+    const deleted = await OffDay.findOneAndDelete({
+      userId: req.params.userId,
+      date: req.params.date,
+    });
+    if (!deleted) return res.status(404).json({ error: 'No off day found for this date' });
+
+    await recalcUserStats(req.params.userId);
+
+    await AuditLog.create({
+      actorId: req.impersonator?.userId || req.user.userId,
+      actorRole: req.impersonator?.role || req.user.role,
+      targetId: req.params.userId, action: 'off_day_clear',
+      details: { date: req.params.date },
+      ip: req.ip,
+    });
+
+    res.json({ message: 'Off day cleared' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to clear off day' });
   }
 });
 

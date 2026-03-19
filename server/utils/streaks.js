@@ -3,20 +3,17 @@ const Friendship = require('../models/Friendship');
 const Group = require('../models/Group');
 const TrackingData = require('../models/TrackingData');
 const User = require('../models/User');
-const { getEffectiveGoalMinutes } = require('./settings');
+const { getEffectiveGoalMinutes, isOffDay } = require('./settings');
 
 // Get a user's effective goal for a specific date (respects per-day overrides)
 async function getUserGoalForDate(userId, date) {
   return getEffectiveGoalMinutes(userId, date);
 }
 
-// Get a user's default effective goal (no date-specific override)
-async function getUserGoal(userId) {
-  return getEffectiveGoalMinutes(userId);
-}
-
 // Check if a user met their daily goal on a given date (using per-day override if any)
+// Returns null for off days (neither met nor missed)
 async function userMetGoal(userId, date) {
+  if (await isOffDay(userId, date)) return null; // off day — skip
   const goal = await getUserGoalForDate(userId, date);
   const record = await TrackingData.findOne({ userId, date });
   return record && record.seconds >= goal * 60;
@@ -35,18 +32,21 @@ function dateStr(daysAgo = 0) {
 }
 
 /**
- * Count how many consecutive days (ending today) both users met their respective goals.
- * Returns 0 if today isn't met by both.
+ * Count how many consecutive non-off days (ending today) both users met their respective goals.
+ * Off days are skipped (streak pauses, doesn't break).
+ * Returns 0 if the most recent non-off day isn't met by both.
  */
 async function countPairStreak(userA, userB) {
   let count = 0;
   for (let i = 0; i < 365; i++) {
     const date = dateStr(i);
-    const [aOk, bOk] = await Promise.all([
+    const [aResult, bResult] = await Promise.all([
       userMetGoal(userA, date),
       userMetGoal(userB, date),
     ]);
-    if (aOk && bOk) {
+    // If either user has this as an off day, skip it
+    if (aResult === null || bResult === null) continue;
+    if (aResult && bResult) {
       count++;
     } else {
       break;
@@ -56,8 +56,8 @@ async function countPairStreak(userA, userB) {
 }
 
 /**
- * Count how many consecutive days (ending today) ALL group members met their respective goals.
- * Returns 0 if today isn't met by all.
+ * Count how many consecutive non-off days (ending today) ALL group members met their respective goals.
+ * Off days for ANY member cause that day to be skipped for the whole group.
  */
 async function countGroupStreak(memberIds) {
   let count = 0;
@@ -66,6 +66,8 @@ async function countGroupStreak(memberIds) {
     const checks = await Promise.all(
       memberIds.map(id => userMetGoal(id, date))
     );
+    // If any member has an off day, skip this date entirely
+    if (checks.some(r => r === null)) continue;
     if (checks.every(Boolean)) {
       count++;
     } else {
@@ -77,16 +79,14 @@ async function countGroupStreak(memberIds) {
 
 /**
  * Sync all friend streaks for a user after they save tracking data.
- * Call this after a successful tracking save.
  */
 async function syncFriendStreaks(userId) {
   const today = dateStr(0);
 
-  // Did this user meet today's goal?
+  // Did this user meet today's goal? (null = off day, skip sync)
   const userOk = await userMetGoal(userId, today);
-  if (!userOk) return; // No point checking pairs if this user hasn't met goal
+  if (!userOk) return; // Off day or didn't meet goal
 
-  // Get all accepted friendships
   const friendships = await Friendship.find({
     $or: [{ requester: userId }, { recipient: userId }],
     status: 'accepted',
@@ -100,13 +100,11 @@ async function syncFriendStreaks(userId) {
       streak = await FriendStreak.create({ ...pair, currentStreak: 0, bestStreak: 0 });
     }
 
-    // Already synced for today — don't double-count
     if (streak.lastSyncDate === today) continue;
 
     const friendOk = await userMetGoal(friendId, today);
-    if (!friendOk) continue; // Friend hasn't met their goal yet
+    if (!friendOk) continue; // Friend off day or hasn't met goal
 
-    // Both met their goals today — recalculate streak from scratch
     const current = await countPairStreak(pair.userA, pair.userB);
     streak.currentStreak = current;
     streak.bestStreak = Math.max(streak.bestStreak, current);
@@ -124,18 +122,16 @@ async function syncGroupStreaks(userId) {
   const groups = await Group.find({ 'members.userId': userId });
 
   for (const group of groups) {
-    // Already synced for today — don't double-count
     if (group.lastSyncDate === today) continue;
 
     const memberIds = group.members.map(m => m.userId);
 
-    // Check all members met their own goals today
     const checks = await Promise.all(
       memberIds.map(id => userMetGoal(id, today))
     );
-    if (!checks.every(Boolean)) continue; // Not all members met their goals yet
+    // Skip if any member has off day or hasn't met goal
+    if (!checks.every(r => r === true)) continue;
 
-    // All met today — recalculate streak from scratch
     const current = await countGroupStreak(memberIds);
     group.currentStreak = current;
     group.bestStreak = Math.max(group.bestStreak, current);
@@ -146,7 +142,7 @@ async function syncGroupStreaks(userId) {
 
 /**
  * Daily cleanup: reset streaks where the day passed without all parties meeting their goals.
- * Should be called periodically (e.g. hourly via setInterval).
+ * Off days are skipped — they don't break streaks.
  */
 async function dailyStreakCleanup() {
   const yesterday = dateStr(1);
@@ -159,9 +155,11 @@ async function dailyStreakCleanup() {
   });
 
   for (const streak of staleStreaks) {
-    const aOk = await userMetGoal(streak.userA, yesterday);
-    const bOk = await userMetGoal(streak.userB, yesterday);
-    if (!aOk || !bOk) {
+    const aResult = await userMetGoal(streak.userA, yesterday);
+    const bResult = await userMetGoal(streak.userB, yesterday);
+    // If either had an off day, don't reset — streak pauses
+    if (aResult === null || bResult === null) continue;
+    if (!aResult || !bResult) {
       streak.currentStreak = 0;
       await streak.save();
     }
@@ -178,6 +176,8 @@ async function dailyStreakCleanup() {
     const checks = await Promise.all(
       memberIds.map(id => userMetGoal(id, yesterday))
     );
+    // If any member had an off day, don't reset
+    if (checks.some(r => r === null)) continue;
     if (!checks.every(Boolean)) {
       group.currentStreak = 0;
       await group.save();

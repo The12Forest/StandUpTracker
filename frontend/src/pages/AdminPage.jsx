@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Shield, Users, Activity, Server, ScrollText, Settings,
@@ -61,12 +61,12 @@ export default function AdminPage() {
 function OverviewTab() {
   const [stats, setStats] = useState(null);
 
-  const loadStats = () => { api('/api/admin/stats').then(setStats).catch(() => {}); };
+  const loadStats = useCallback(() => { api('/api/admin/stats').then(setStats).catch(() => {}); }, []);
   useEffect(() => {
     loadStats();
     const id = setInterval(loadStats, 30000);
     return () => clearInterval(id);
-  }, []);
+  }, [loadStats]);
 
   if (!stats) return <div className="text-zen-500">Loading...</div>;
 
@@ -347,13 +347,13 @@ function UsersTab() {
   const currentUser = useAuthStore((s) => s.user);
   const startImpersonation = useAuthStore((s) => s.startImpersonation);
 
-  const fetchUsers = () => {
+  const fetchUsers = useCallback(() => {
     api(`/api/admin/users?page=${page}&limit=20&search=${encodeURIComponent(search)}`)
       .then((data) => { setUsers(data.users || []); setTotal(data.total || 0); })
       .catch(() => {});
-  };
+  }, [page, search]);
 
-  useEffect(fetchUsers, [page, search]);
+  useEffect(() => { fetchUsers(); }, [fetchUsers]);
 
   const updateRole = async (userId, role) => {
     try {
@@ -634,6 +634,7 @@ const SECTION_LABELS = {
   groups: { label: 'Groups', icon: UsersRound, description: 'Group creation, limits, and streak settings' },
   emailAdmin: { label: 'Email Administration', icon: Mail, description: 'Force re-verification and email admin actions' },
   ai: { label: 'AI / Ollama', icon: Brain, description: 'Configure the Ollama AI endpoint, model, and feature toggle' },
+  thresholds: { label: 'Activity Thresholds', icon: Activity, description: 'Minimum activity requirements for statistics inclusion' },
   logging: { label: 'Logging', icon: ScrollText, description: 'Log levels and retention policies' },
   general: { label: 'Other Settings', icon: Sliders, description: 'Miscellaneous settings' },
 };
@@ -649,12 +650,12 @@ function SettingsTab() {
   const SENSITIVE_KEYS = new Set(['smtpPass', 'jwtSecret']);
   const HIDDEN_KEYS = new Set(['defaultTheme']);
 
-  const loadSettings = () => {
+  const loadSettings = useCallback(() => {
     api('/api/admin/settings').then(setSettings).catch(() => {});
-  };
-  useEffect(loadSettings, []);
+  }, []);
+  useEffect(() => { loadSettings(); }, [loadSettings]);
 
-  const fetchOllamaModels = async () => {
+  const fetchOllamaModels = useCallback(async () => {
     setLoadingModels(true);
     try {
       const data = await api('/api/ai/models');
@@ -664,12 +665,12 @@ function SettingsTab() {
       setOllamaModels([]);
     }
     setLoadingModels(false);
-  };
+  }, [toast]);
 
   // Auto-fetch Ollama models when settings load and endpoint exists
   useEffect(() => {
     if (settings.ollamaEndpoint?.value) fetchOllamaModels();
-  }, [settings.ollamaEndpoint?.value]);
+  }, [settings.ollamaEndpoint?.value, fetchOllamaModels]);
 
   const saveSetting = async (key, value) => {
     try {
@@ -712,6 +713,7 @@ function SettingsTab() {
     masterDailyGoalMinutes: 'The master daily time goal (in minutes) that applies to all users. When enforcement is off, this is the default for new users.',
     enforceDailyGoal: 'When enabled, ALL users are locked to the master daily goal and cannot change it in their settings.',
     enforce2fa: 'When enabled, ALL users must have two-factor authentication enabled. Users without 2FA will be forced to set it up on their next login.',
+    minActivityThresholdMinutes: 'Days where total standing time is below this value are excluded from statistics and heatmap activity. This does not affect streak calculations — use the daily goal setting for streak thresholds. Default: 1 minute.',
   };
 
   // Group settings by section
@@ -723,7 +725,7 @@ function SettingsTab() {
     sections[section].push({ key, ...meta });
   }
 
-  const sectionOrder = ['enforcement', 'server', 'security', 'client', 'mail', 'auth', 'social', 'groups', 'emailAdmin', 'ai', 'logging', 'general'];
+  const sectionOrder = ['enforcement', 'thresholds', 'server', 'security', 'client', 'mail', 'auth', 'social', 'groups', 'emailAdmin', 'ai', 'logging', 'general'];
 
   return (
     <div className="space-y-6">

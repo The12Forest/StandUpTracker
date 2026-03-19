@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { api } from '../lib/api';
 
-const useNotificationStore = create((set, get) => ({
+const useNotificationStore = create((set) => ({
   notifications: [],
   unreadCount: 0,
   open: false,
@@ -26,12 +26,16 @@ const useNotificationStore = create((set, get) => ({
   markRead: async (id) => {
     try {
       await api(`/api/notifications/${id}/read`, { method: 'PUT' });
-      set((s) => ({
-        notifications: s.notifications.map((n) =>
-          n._id === id ? { ...n, read: true } : n
-        ),
-        unreadCount: Math.max(0, s.unreadCount - 1),
-      }));
+      set((s) => {
+        const target = s.notifications.find((n) => n._id === id);
+        const wasUnread = target && !target.read;
+        return {
+          notifications: s.notifications.map((n) =>
+            n._id === id ? { ...n, read: true } : n
+          ),
+          unreadCount: wasUnread ? Math.max(0, s.unreadCount - 1) : s.unreadCount,
+        };
+      });
     } catch { /* ignore */ }
   },
 

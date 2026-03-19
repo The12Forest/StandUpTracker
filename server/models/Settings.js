@@ -65,6 +65,9 @@ const DEFAULTS = {
   enforceDailyGoal: { value: false, description: 'Lock the daily goal for all users to the master value', section: 'enforcement' },
   enforce2fa: { value: false, description: 'Require all users to enable two-factor authentication', section: 'enforcement' },
 
+  // Activity Thresholds
+  minActivityThresholdMinutes: { value: 1, description: 'Minimum standing time (minutes) for a day to count in statistics. Days below this are excluded from stats and heatmap. Does not affect streaks.', section: 'thresholds' },
+
   // Logging
   logLevel: { value: 'INFO', description: 'Minimum log level (DEBUG, INFO, WARN, ERROR)', section: 'logging' },
   logRetentionDays: { value: 90, description: 'Days to retain logs before auto-deletion', section: 'logging' },

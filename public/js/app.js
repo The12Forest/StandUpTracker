@@ -85,7 +85,8 @@
 
       currentUser = await meRes.json();
       localStorage.setItem('sut_user', JSON.stringify(currentUser));
-      data = await trackRes.json();
+      const trackData = await trackRes.json();
+      data = trackData.tracking || trackData;
       goal = currentUser.dailyGoalMinutes || 60;
 
       // Restore local tracking state

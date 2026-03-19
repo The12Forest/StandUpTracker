@@ -4,7 +4,7 @@ const notificationSchema = new mongoose.Schema({
   userId: { type: String, required: true, index: true },
   type: {
     type: String,
-    enum: ['standup_reminder', 'streak_at_risk', 'friend_request', 'level_up', 'daily_goal_reached'],
+    enum: ['standup_reminder', 'streak_at_risk', 'friend_request', 'friend_request_accepted', 'level_up', 'daily_goal_reached', 'group_invite'],
     required: true,
   },
   title: { type: String, required: true },

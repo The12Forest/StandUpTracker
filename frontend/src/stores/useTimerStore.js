@@ -88,8 +88,9 @@ const useTimerStore = create((set, get) => ({
   loadToday: async () => {
     try {
       const date = todayKey();
-      const data = await api(`/api/tracking?from=${date}&to=${date}`);
-      const todayData = data[date];
+      const raw = await api(`/api/tracking?from=${date}&to=${date}`);
+      const trackingData = raw.tracking || raw;
+      const todayData = trackingData[date];
       if (todayData != null) {
         const seconds = typeof todayData === 'object' ? (todayData.seconds || 0) : (todayData || 0);
         set({ todayTotal: seconds });

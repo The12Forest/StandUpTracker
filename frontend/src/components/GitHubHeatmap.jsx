@@ -27,7 +27,6 @@ export default function GitHubHeatmap({ data = {}, darkMode = true }) {
     const jsToRow = [6, 0, 1, 2, 3, 4, 5]; // JS day -> row index
 
     // Calculate the start: go back enough to fill ~53 weeks ending today
-    const endDate = new Date(today);
     const totalDays = 53 * 7 - (6 - jsToRow[todayDay]); // fill up to today
     const startDate = new Date(today);
     startDate.setDate(startDate.getDate() - totalDays + 1);

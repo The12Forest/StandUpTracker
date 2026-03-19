@@ -2,12 +2,13 @@ const Notification = require('../models/Notification');
 const User = require('../models/User');
 const TrackingData = require('../models/TrackingData');
 const logger = require('./logger');
-const { getEffectiveGoalMinutes } = require('./settings');
+const { getEffectiveGoalMinutes, isOffDay } = require('./settings');
 
 /**
  * Runs periodically (e.g. every hour) to create scheduled notifications:
  * - standup_reminder: if user hasn't tracked anything today by noon-ish
  * - streak_at_risk: if user's streak > 0 and they haven't met goal today with < 4 hours left in the day
+ * Off days are skipped — no reminders or streak warnings sent.
  */
 async function runNotificationScheduler(io) {
   try {
@@ -18,6 +19,9 @@ async function runNotificationScheduler(io) {
     const users = await User.find({ active: true }).select('userId dailyGoalMinutes currentStreak');
 
     for (const user of users) {
+      // Skip notifications for off days
+      if (await isOffDay(user.userId, todayStr)) continue;
+
       const effectiveGoal = await getEffectiveGoalMinutes(user, todayStr);
       const goalSeconds = effectiveGoal * 60;
       const tracking = await TrackingData.findOne({ userId: user.userId, date: todayStr });

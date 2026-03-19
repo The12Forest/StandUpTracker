@@ -23,7 +23,7 @@ function generateRecoveryCodes(count = 8) {
 }
 
 function generateEmailCode() {
-  return crypto.randomInt(100000, 999999).toString();
+  return crypto.randomInt(100000, 1000000).toString();
 }
 
 module.exports = {

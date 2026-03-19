@@ -123,7 +123,7 @@ router.post('/register', authLimiter, async (req, res) => {
         role: user.role,
         emailVerified: user.emailVerified,
         theme: user.theme,
-        dailyGoalMinutes: enforceDailyGoal ? (masterGoal || 60) : (user.dailyGoalMinutes || 30),
+        dailyGoalMinutes: enforceDailyGoal ? (masterGoal || 60) : (user.dailyGoalMinutes || 60),
         totpEnabled: user.totpEnabled || false,
         email2faEnabled: user.email2faEnabled || false,
         totalStandingSeconds: user.totalStandingSeconds || 0,
@@ -262,7 +262,7 @@ router.post('/login', authLimiter, async (req, res) => {
         role: user.role,
         emailVerified: user.emailVerified,
         theme: user.theme,
-        dailyGoalMinutes: enforceDailyGoal ? (masterGoal || 60) : (user.dailyGoalMinutes || 30),
+        dailyGoalMinutes: enforceDailyGoal ? (masterGoal || 60) : (user.dailyGoalMinutes || 60),
         totpEnabled: user.totpEnabled,
         email2faEnabled: user.email2faEnabled,
         totalStandingSeconds: user.totalStandingSeconds || 0,
@@ -526,6 +526,7 @@ router.post('/2fa/totp/disable', authenticate, impersonationGuard, async (req, r
       return res.status(403).json({ error: '2FA is required by your administrator and cannot be disabled' });
     }
     const { password } = req.body;
+    if (!password) return res.status(400).json({ error: 'Password required' });
     const valid = await argon2.verify(req.user.passwordHash, password);
     if (!valid) return res.status(401).json({ error: 'Password is incorrect' });
 
@@ -566,6 +567,7 @@ router.post('/2fa/email/disable', authenticate, impersonationGuard, async (req, 
       return res.status(403).json({ error: '2FA is required by your administrator and cannot be disabled' });
     }
     const { password } = req.body;
+    if (!password) return res.status(400).json({ error: 'Password required' });
     const valid = await argon2.verify(req.user.passwordHash, password);
     if (!valid) return res.status(401).json({ error: 'Password is incorrect' });
 

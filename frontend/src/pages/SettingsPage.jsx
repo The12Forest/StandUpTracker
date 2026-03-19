@@ -133,8 +133,8 @@ export default function SettingsPage() {
             <p className="text-zen-300 mt-0.5">{user?.createdAt ? new Date(user.createdAt).toLocaleDateString() : '—'}</p>
           </div>
           <div>
-            <span className="text-zen-500">Level</span>
-            <p className="text-zen-300 mt-0.5">Lv.{user?.level || 1}</p>
+            <span className="text-zen-500">Status</span>
+            <p className="text-zen-300 mt-0.5">{user?.active !== false ? 'Active' : 'Inactive'}</p>
           </div>
         </div>
       </BentoCard>

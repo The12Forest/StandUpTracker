@@ -94,12 +94,12 @@ router.post('/advice', authenticate, softBanCheck, requireVerified, aiGateCheck,
     const { context = 'dashboard', forceRefresh = false } = req.body;
     const userId = req.user.userId;
 
-    // Check cooldown — look at last generated entry regardless of cache expiry
+    // Check cooldown — look at last generated entry regardless of cache expiry or forceRefresh
     const cooldownMinutes = await getSetting('aiAdviceCooldownMinutes') || 30;
     const cooldownMs = cooldownMinutes * 60 * 1000;
     const lastEntry = await AiAdviceCache.findOne({ userId, context }).sort({ generatedAt: -1 });
 
-    if (lastEntry && forceRefresh) {
+    if (lastEntry) {
       const elapsed = Date.now() - lastEntry.generatedAt.getTime();
       if (elapsed < cooldownMs) {
         const retryAfterSeconds = Math.ceil((cooldownMs - elapsed) / 1000);
