@@ -46,7 +46,7 @@ function CooldownTimer({ nextRefreshAt, onReady }) {
 
   if (!remaining) return null;
   return (
-    <span className="text-[10px] text-zen-500 flex items-center gap-1">
+    <span className="text-[11px] text-zen-400 flex items-center gap-1">
       <Clock size={10} />
       Refresh in {remaining}
     </span>
@@ -161,8 +161,8 @@ export default function DashboardPage() {
       label: (ctx) => `${ctx.raw} min`,
     }}},
     scales: {
-      x: { grid: { display: false }, ticks: { color: '#6b6b8a', font: { size: 9 }, maxRotation: 45 }},
-      y: { grid: { color: 'rgba(37,37,58,0.5)' }, ticks: { color: '#6b6b8a', callback: (v) => `${v}m` }},
+      x: { grid: { display: false }, ticks: { color: '#9898b4', font: { size: 9 }, maxRotation: 45 }},
+      y: { grid: { color: 'rgba(37,37,58,0.5)' }, ticks: { color: '#9898b4', callback: (v) => `${v}m` }},
     },
   };
 
@@ -216,17 +216,17 @@ export default function DashboardPage() {
               {prediction ? (
                 <div className="space-y-3">
                   <div>
-                    <p className="text-xs text-zen-500">Daily Average</p>
+                    <p className="text-xs text-zen-400">Daily Average</p>
                     <p className="text-lg font-bold text-zen-100">{formatMinutes(prediction.avgSeconds)} min</p>
                   </div>
                   <div>
-                    <p className="text-xs text-zen-500">Trend (7d)</p>
+                    <p className="text-xs text-zen-400">Trend (7d)</p>
                     <p className={`text-lg font-bold ${prediction.trendSeconds >= 0 ? 'text-accent-400' : 'text-danger-400'}`}>
                       {prediction.trendSeconds >= 0 ? '+' : ''}{formatMinutes(prediction.trendSeconds)} min/day
                     </p>
                   </div>
                   <div>
-                    <p className="text-xs text-zen-500">Tomorrow Prediction</p>
+                    <p className="text-xs text-zen-400">Tomorrow Prediction</p>
                     <p className="text-lg font-bold text-zen-100">{formatMinutes(prediction.predictedSeconds)} min</p>
                   </div>
                   <div className={`text-xs px-3 py-1.5 rounded-lg inline-block ${
@@ -237,7 +237,7 @@ export default function DashboardPage() {
                   </div>
                 </div>
               ) : (
-                <p className="text-sm text-zen-500">Need at least 3 days of data for predictions</p>
+                <p className="text-sm text-zen-400">Need at least 3 days of data for predictions</p>
               )}
             </BentoCard>
           </BentoGrid>
@@ -255,15 +255,15 @@ export default function DashboardPage() {
           {(stats || user) && (
             <BentoGrid>
               <BentoCard>
-                <p className="text-xs text-zen-500">Total Tracked</p>
+                <p className="text-xs text-zen-400">Total Tracked</p>
                 <p className="text-2xl font-bold text-zen-100 mt-1">{formatHm(user?.totalStandingSeconds ?? stats?.totalStandingSeconds ?? 0)}</p>
               </BentoCard>
               <BentoCard>
-                <p className="text-xs text-zen-500">Active Days</p>
+                <p className="text-xs text-zen-400">Active Days</p>
                 <p className="text-2xl font-bold text-zen-100 mt-1">{user?.totalDays ?? stats?.totalDays ?? 0}</p>
               </BentoCard>
               <BentoCard>
-                <p className="text-xs text-zen-500">Avg / Active Day</p>
+                <p className="text-xs text-zen-400">Avg / Active Day</p>
                 <p className="text-2xl font-bold text-zen-100 mt-1">
                   {(user?.totalDays ?? stats?.totalDays)
                     ? formatHm(Math.round((user?.totalStandingSeconds ?? stats?.totalStandingSeconds ?? 0) / (user?.totalDays ?? stats?.totalDays)))
@@ -276,37 +276,37 @@ export default function DashboardPage() {
           {/* ── Personal Records ── */}
           {pr && (
             <div>
-              <h3 className="text-sm font-semibold text-zen-300 mb-3 flex items-center gap-2">
+              <h3 className="text-sm font-semibold text-zen-200 mb-3 flex items-center gap-2">
                 <Trophy size={14} className="text-accent-400" /> Personal Records
               </h3>
               <BentoGrid>
                 <BentoCard>
-                  <p className="text-xs text-zen-500">Longest Session</p>
+                  <p className="text-xs text-zen-400">Longest Session</p>
                   <p className="text-xl font-bold text-zen-100 mt-1">{pr.longestSession ? formatHm(pr.longestSession.seconds) : '—'}</p>
-                  {pr.longestSession && <p className="text-[10px] text-zen-500 mt-0.5">{pr.longestSession.date}</p>}
+                  {pr.longestSession && <p className="text-[11px] text-zen-400 mt-0.5">{pr.longestSession.date}</p>}
                 </BentoCard>
                 <BentoCard>
-                  <p className="text-xs text-zen-500">Best Day</p>
+                  <p className="text-xs text-zen-400">Best Day</p>
                   <p className="text-xl font-bold text-zen-100 mt-1">{pr.bestDay ? formatHm(pr.bestDay.seconds) : '—'}</p>
-                  {pr.bestDay && <p className="text-[10px] text-zen-500 mt-0.5">{pr.bestDay.date}</p>}
+                  {pr.bestDay && <p className="text-[11px] text-zen-400 mt-0.5">{pr.bestDay.date}</p>}
                 </BentoCard>
                 <BentoCard>
-                  <p className="text-xs text-zen-500">Best Week</p>
+                  <p className="text-xs text-zen-400">Best Week</p>
                   <p className="text-xl font-bold text-zen-100 mt-1">{pr.bestWeek ? formatHm(pr.bestWeek.seconds) : '—'}</p>
-                  {pr.bestWeek && <p className="text-[10px] text-zen-500 mt-0.5">Week of {pr.bestWeek.weekStart}</p>}
+                  {pr.bestWeek && <p className="text-[11px] text-zen-400 mt-0.5">Week of {pr.bestWeek.weekStart}</p>}
                 </BentoCard>
                 <BentoCard>
-                  <p className="text-xs text-zen-500">Best Month</p>
+                  <p className="text-xs text-zen-400">Best Month</p>
                   <p className="text-xl font-bold text-zen-100 mt-1">{pr.bestMonth ? formatHm(pr.bestMonth.seconds) : '—'}</p>
-                  {pr.bestMonth && <p className="text-[10px] text-zen-500 mt-0.5">{pr.bestMonth.month}</p>}
+                  {pr.bestMonth && <p className="text-[11px] text-zen-400 mt-0.5">{pr.bestMonth.month}</p>}
                 </BentoCard>
                 <BentoCard>
-                  <p className="text-xs text-zen-500">Total Sessions</p>
+                  <p className="text-xs text-zen-400">Total Sessions</p>
                   <p className="text-xl font-bold text-zen-100 mt-1">{pr.totalSessions}</p>
-                  <p className="text-[10px] text-zen-500 mt-0.5">Avg: {formatHm(pr.avgSessionDuration)}</p>
+                  <p className="text-[11px] text-zen-400 mt-0.5">Avg: {formatHm(pr.avgSessionDuration)}</p>
                 </BentoCard>
                 <BentoCard>
-                  <p className="text-xs text-zen-500">Total Standing Time</p>
+                  <p className="text-xs text-zen-400">Total Standing Time</p>
                   <p className="text-xl font-bold text-zen-100 mt-1">{formatHm(pr.totalSeconds)}</p>
                 </BentoCard>
               </BentoGrid>
@@ -316,14 +316,14 @@ export default function DashboardPage() {
           {/* ── Progress & Trends ── */}
           {prog && (
             <div>
-              <h3 className="text-sm font-semibold text-zen-300 mb-3 flex items-center gap-2">
+              <h3 className="text-sm font-semibold text-zen-200 mb-3 flex items-center gap-2">
                 <TrendingUp size={14} className="text-accent-400" /> Progress & Trends
               </h3>
               <BentoGrid>
                 <BentoCard className="md:col-span-2">
                   <div className="flex items-center justify-between mb-2">
-                    <p className="text-xs text-zen-500">Level {prog.level}{prog.nextLevel ? ` → ${prog.nextLevel}` : ' (Max)'}</p>
-                    <p className="text-xs text-zen-400">{prog.totalHours}h total</p>
+                    <p className="text-sm text-zen-100">Level {prog.level}{prog.nextLevel ? ` → ${prog.nextLevel}` : ' (Max)'}</p>
+                    <p className="text-sm text-zen-100">{prog.totalHours}h total</p>
                   </div>
                   <div className="w-full bg-zen-800 rounded-full h-3">
                     <div
@@ -332,22 +332,22 @@ export default function DashboardPage() {
                     />
                   </div>
                   <div className="flex justify-between mt-1">
-                    <span className="text-[10px] text-zen-600">{prog.currentLevelHours}h</span>
-                    {prog.nextLevelHours && <span className="text-[10px] text-zen-600">{prog.nextLevelHours}h</span>}
+                    <span className="text-[13px] text-zen-400">{prog.currentLevelHours}h</span>
+                    {prog.nextLevelHours && <span className="text-[13px] text-zen-400">{prog.nextLevelHours}h</span>}
                   </div>
                 </BentoCard>
                 <BentoCard>
-                  <p className="text-xs text-zen-500">Week over Week</p>
+                  <p className="text-xs text-zen-400">Week over Week</p>
                   <div className="text-xl font-bold mt-1"><ChangeIndicator value={prog.weekOverWeekChange} /></div>
                 </BentoCard>
                 <BentoCard>
-                  <p className="text-xs text-zen-500">Month over Month</p>
+                  <p className="text-xs text-zen-400">Month over Month</p>
                   <div className="text-xl font-bold mt-1"><ChangeIndicator value={prog.monthOverMonthChange} /></div>
                 </BentoCard>
                 <BentoCard>
-                  <p className="text-xs text-zen-500">Consistency (30d)</p>
+                  <p className="text-xs text-zen-400">Consistency (30d)</p>
                   <p className="text-xl font-bold text-zen-100 mt-1">{prog.consistencyScore}%</p>
-                  <p className="text-[10px] text-zen-500 mt-0.5">Days goal met in last 30</p>
+                  <p className="text-[11px] text-zen-400 mt-0.5">Days goal met in last 30</p>
                 </BentoCard>
               </BentoGrid>
             </div>
@@ -356,27 +356,27 @@ export default function DashboardPage() {
           {/* ── Goal Tracking ── */}
           {goals && (
             <div>
-              <h3 className="text-sm font-semibold text-zen-300 mb-3 flex items-center gap-2">
+              <h3 className="text-sm font-semibold text-zen-200 mb-3 flex items-center gap-2">
                 <Target size={14} className="text-accent-400" /> Goal Tracking
               </h3>
               <BentoGrid>
                 <BentoCard>
-                  <p className="text-xs text-zen-500">Daily Goal</p>
+                  <p className="text-xs text-zen-400">Daily Goal</p>
                   <p className="text-xl font-bold text-zen-100 mt-1">{goals.dailyGoalMinutes} min</p>
                   {goals.enforced && <p className="text-[10px] text-warn-400 mt-0.5">Admin-enforced</p>}
                 </BentoCard>
                 <BentoCard>
-                  <p className="text-xs text-zen-500">Goal Met This Week</p>
+                  <p className="text-xs text-zen-400">Goal Met This Week</p>
                   <p className="text-xl font-bold text-zen-100 mt-1">{goals.goalMetThisWeek} / 7</p>
                 </BentoCard>
                 <BentoCard>
-                  <p className="text-xs text-zen-500">Goal Met This Month</p>
+                  <p className="text-xs text-zen-400">Goal Met This Month</p>
                   <p className="text-xl font-bold text-zen-100 mt-1">{goals.goalMetThisMonth}</p>
                 </BentoCard>
                 <BentoCard>
-                  <p className="text-xs text-zen-500">All-Time Completion</p>
+                  <p className="text-xs text-zen-400">All-Time Completion</p>
                   <p className="text-xl font-bold text-zen-100 mt-1">{goals.goalCompletionRate}%</p>
-                  <p className="text-[10px] text-zen-500 mt-0.5">{goals.daysGoalMet} / {goals.daysTracked} days</p>
+                  <p className="text-[11px] text-zen-400 mt-0.5">{goals.daysGoalMet} / {goals.daysTracked} days</p>
                 </BentoCard>
               </BentoGrid>
             </div>
@@ -421,7 +421,7 @@ export default function DashboardPage() {
                     </div>
 
                     <div className="border-t border-zen-700/30 pt-3 space-y-2">
-                      <p className="text-[10px] text-zen-600">
+                      <p className="text-[10px] text-zen-400">
                         {aiAdvice.cached ? 'Cached' : 'Fresh'}
                         {generatedAgo !== null && ` — Generated ${generatedAgo < 1 ? 'just now' : `${generatedAgo}m ago`}`}
                       </p>
@@ -437,7 +437,7 @@ export default function DashboardPage() {
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    <p className="text-xs text-zen-500">Get personalized standing advice powered by AI</p>
+                    <p className="text-xs text-zen-400">Get personalized standing advice powered by AI</p>
                     <button
                       onClick={() => requestAdvice(false)}
                       disabled={aiLoading}

@@ -18,6 +18,8 @@ const groupSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true, maxlength: 50 },
   members: [memberSchema],
   invites: [inviteSchema],
+  // Leaderboard
+  leaderboardCriterion: { type: String, enum: ['weeklyTime', 'totalTime', 'level', 'streak'], default: 'weeklyTime' },
   // Group streak
   currentStreak: { type: Number, default: 0 },
   bestStreak: { type: Number, default: 0 },

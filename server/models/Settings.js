@@ -42,11 +42,13 @@ const DEFAULTS = {
   // Social / Features
   friendRequestsEnabled: { value: true, description: 'Enable friend requests and social features', section: 'social' },
   firstDayOfWeek: { value: 'monday', description: 'First day of the week (monday or sunday) — affects week view, heatmap, streaks', section: 'social' },
+  allowUsernameChanges: { value: true, description: 'Allow users to change their own username (admins can always force-change)', section: 'social' },
 
   // Group Settings
   groupsEnabled: { value: true, description: 'Enable group creation and invitations', section: 'groups' },
   maxGroupSize: { value: 20, description: 'Maximum number of members per group', section: 'groups' },
   maxGroupsPerUser: { value: 5, description: 'Maximum number of groups a user can belong to', section: 'groups' },
+  defaultGroupLeaderboardCriterion: { value: 'weeklyTime', description: 'Default leaderboard ranking for new groups (weeklyTime, totalTime, level, streak)', section: 'groups' },
 
   // Email Admin
   allowForceReverify: { value: true, description: 'Allow admins to force users to re-verify their email', section: 'emailAdmin' },
@@ -73,6 +75,7 @@ const DEFAULTS = {
 
   // Activity Thresholds
   minActivityThresholdMinutes: { value: 1, description: 'Minimum standing time (minutes) for a day to count in statistics. Days below this are excluded from stats and heatmap. Does not affect streaks.', section: 'thresholds' },
+  forgottenCheckoutThresholdHours: { value: 8, description: 'Hours after which a running timer is considered a forgotten checkout (1-24)', section: 'thresholds' },
 
   // Reporting
   reportThreshold: { value: 3, description: 'Number of confirmed reports against a single session before daily progress is cleared (min 1)', section: 'reporting' },

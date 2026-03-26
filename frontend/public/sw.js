@@ -1,19 +1,35 @@
-const CACHE = 'sut-v4';
+const OFFLINE_CACHE = 'sut-offline-v1';
+const OFFLINE_URL = '/offline.html';
 
+// Install — cache only the offline fallback page
 self.addEventListener('install', (e) => {
-  // Skip caching SPA routes — they need the server to serve index.html
-  e.waitUntil(self.skipWaiting());
-});
-
-self.addEventListener('activate', (e) => {
   e.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
-    ).then(() => self.clients.claim())
+    caches.open(OFFLINE_CACHE)
+      .then((cache) => cache.add(OFFLINE_URL))
+      .then(() => self.skipWaiting())
   );
 });
 
-// Push notification handler — this is what triggers OS-level notifications
+// Activate — delete all old caches, claim clients
+self.addEventListener('activate', (e) => {
+  e.waitUntil(
+    caches.keys()
+      .then((keys) => Promise.all(
+        keys.filter((k) => k !== OFFLINE_CACHE).map((k) => caches.delete(k))
+      ))
+      .then(() => self.clients.claim())
+  );
+});
+
+// Fetch — only intercept navigation requests; serve offline page on network failure
+self.addEventListener('fetch', (e) => {
+  if (e.request.mode !== 'navigate') return;
+  e.respondWith(
+    fetch(e.request).catch(() => caches.match(OFFLINE_URL))
+  );
+});
+
+// Push — display OS-level notification
 self.addEventListener('push', (e) => {
   if (!e.data) return;
 
@@ -21,30 +37,24 @@ self.addEventListener('push', (e) => {
   try {
     data = e.data.json();
   } catch {
-    // Try plain text fallback
-    const text = e.data.text();
-    data = { title: 'StandUpTracker', body: text };
+    data = { title: 'StandUpTracker', body: e.data.text() };
   }
 
   const options = {
     body: data.body || '',
-    icon: data.icon || '/favicon.png',
-    badge: '/favicon.png',
+    icon: data.icon || '/vite.svg',
+    badge: data.badge || '/vite.svg',
     tag: data.tag || 'sut-' + Date.now(),
     renotify: true,
     data: { url: data.url || '/dashboard' },
-    // Ensure the notification is visible and persistent
-    requireInteraction: false,
-    silent: false,
   };
 
-  // waitUntil is critical — without it the SW may be killed before showNotification resolves
   e.waitUntil(
     self.registration.showNotification(data.title || 'StandUpTracker', options)
   );
 });
 
-// Click handler — focus or open the app
+// Notification click — focus existing window or open new one
 self.addEventListener('notificationclick', (e) => {
   e.notification.close();
   const url = e.notification.data?.url || '/dashboard';
@@ -61,33 +71,15 @@ self.addEventListener('notificationclick', (e) => {
   );
 });
 
-// Push subscription change — re-subscribe if the browser rotates keys
+// Re-subscribe if browser rotates push subscription keys
 self.addEventListener('pushsubscriptionchange', (e) => {
   e.waitUntil(
-    self.registration.pushManager.subscribe(e.oldSubscription.options).then((subscription) => {
-      return fetch('/api/notifications/push/subscribe', {
+    self.registration.pushManager.subscribe(e.oldSubscription.options)
+      .then((sub) => fetch('/api/notifications/push/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ subscription: subscription.toJSON() }),
-      });
-    }).catch(() => {
-      // Best effort — if this fails the user will need to re-enable push in settings
-    })
-  );
-});
-
-self.addEventListener('fetch', (e) => {
-  const url = new URL(e.request.url);
-  // Skip API and socket requests
-  if (url.pathname.startsWith('/api') || url.pathname.startsWith('/socket.io')) return;
-
-  e.respondWith(
-    fetch(e.request).then((res) => {
-      if (res.ok && e.request.method === 'GET') {
-        const clone = res.clone();
-        caches.open(CACHE).then((c) => c.put(e.request, clone));
-      }
-      return res;
-    }).catch(() => caches.match(e.request))
+        body: JSON.stringify({ subscription: sub.toJSON() }),
+      }))
+      .catch(() => {})
   );
 });

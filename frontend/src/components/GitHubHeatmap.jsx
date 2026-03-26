@@ -80,9 +80,9 @@ export default function GitHubHeatmap({ data = {}, offDays = {}, darkMode = true
   const totalHeight = headerHeight + 7 * (cellSize + gap);
 
   return (
-    <div className="relative">
-      <div className="overflow-x-auto pb-2">
-        <svg width={totalWidth} height={totalHeight} style={{ minWidth: totalWidth }}>
+    <div className="relative" style={{ width: totalWidth }}>
+      <div>
+        <svg width={totalWidth} height={totalHeight}>
           {/* Month labels */}
           {monthLabels.map((m, i) => (
             <text

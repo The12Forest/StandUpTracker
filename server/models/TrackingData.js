@@ -8,6 +8,7 @@ const trackingDataSchema = new mongoose.Schema({
     start: Date,
     end: Date,
     duration: Number,
+    forgottenCheckout: { type: Boolean, default: false },
   }],
   manualOverride: { type: Boolean, default: false },
   originalSeconds: { type: Number, default: null },

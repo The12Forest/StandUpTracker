@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const QRCode = require('qrcode');
 const rateLimit = require('express-rate-limit');
 const User = require('../models/User');
+const AuditLog = require('../models/AuditLog');
 const { authenticate } = require('../middleware/auth');
 const { impersonationGuard, softBanCheck, lastActiveTouch } = require('../middleware/guards');
 const { sendVerificationEmail, send2faCode } = require('../utils/email');
@@ -364,6 +365,7 @@ router.get('/me', authenticate, softBanCheck, lastActiveTouch, async (req, res) 
   const u = req.user;
   const enforceDailyGoal = await getSetting('enforceDailyGoal');
   const enforce2fa = await getSetting('enforce2fa');
+  const allowUsernameChanges = await getSetting('allowUsernameChanges');
   const masterGoal = enforceDailyGoal ? await getSetting('masterDailyGoalMinutes') : null;
   const has2fa = u.totpEnabled || u.email2faEnabled;
   res.json({
@@ -392,6 +394,7 @@ router.get('/me', authenticate, softBanCheck, lastActiveTouch, async (req, res) 
       enforceDailyGoal: !!enforceDailyGoal,
       enforce2fa: !!enforce2fa,
       needs2faSetup: !!enforce2fa && !has2fa,
+      canChangeUsername: !!allowUsernameChanges && u.canChangeUsername !== false,
     },
   });
 });
@@ -427,6 +430,76 @@ router.put('/profile', authenticate, softBanCheck, async (req, res) => {
     res.json({ message: 'Profile updated' });
   } catch (err) {
     res.status(500).json({ error: 'Update failed' });
+  }
+});
+
+// Change username
+router.put('/username', authenticate, softBanCheck, impersonationGuard, async (req, res) => {
+  try {
+    const { username } = req.body;
+    if (!username || typeof username !== 'string') {
+      return res.status(400).json({ error: 'Username is required' });
+    }
+
+    const trimmed = username.trim();
+
+    // Validation
+    if (trimmed.length < 3) {
+      return res.status(400).json({ error: 'Username must be at least 3 characters' });
+    }
+    if (trimmed.length > 32) {
+      return res.status(400).json({ error: 'Username must be at most 32 characters' });
+    }
+    if (!/^[a-zA-Z0-9_]+$/.test(trimmed)) {
+      return res.status(400).json({ error: 'Username may only contain letters, numbers, and underscores' });
+    }
+
+    // Check global setting
+    const allowed = await getSetting('allowUsernameChanges');
+    if (!allowed) {
+      return res.status(403).json({ error: 'Username changes are currently disabled by your administrator' });
+    }
+
+    // Check per-user permission
+    if (!req.user.canChangeUsername) {
+      return res.status(403).json({ error: 'Your account is not permitted to change its username' });
+    }
+
+    // No-op if same
+    if (trimmed === req.user.username) {
+      return res.json({ message: 'Username unchanged' });
+    }
+
+    // Uniqueness check (case-insensitive)
+    const existing = await User.findOne({ username: { $regex: new RegExp(`^${trimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } });
+    if (existing && existing.userId !== req.user.userId) {
+      return res.status(409).json({ error: 'That username is already taken' });
+    }
+
+    const oldUsername = req.user.username;
+    req.user.username = trimmed;
+    await req.user.save();
+
+    // Audit log
+    await AuditLog.create({
+      actorId: req.user.userId,
+      actorRole: req.user.role,
+      targetId: req.user.userId,
+      action: 'username_change',
+      details: { oldUsername, newUsername: trimmed },
+      ip: req.ip,
+    });
+
+    logger.info(`Username changed: ${oldUsername} → ${trimmed}`, {
+      source: 'auth', userId: req.user.userId,
+    });
+
+    res.json({ message: 'Username updated', username: trimmed });
+  } catch (err) {
+    if (err.code === 11000) {
+      return res.status(409).json({ error: 'That username is already taken' });
+    }
+    res.status(500).json({ error: 'Failed to change username' });
   }
 });
 

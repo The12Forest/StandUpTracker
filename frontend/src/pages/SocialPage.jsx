@@ -304,7 +304,7 @@ export default function SocialPage() {
       {/* Heatmap Modal */}
       {heatmap && heatmapFriend && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => { setHeatmap(null); setHeatmapFriend(null); }}>
-          <div className="glass-card rounded-xl max-w-3xl w-full p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+          <div className="glass-card rounded-xl w-fit max-w-[95vw] p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold text-zen-100">{heatmapFriend.username}&apos;s Activity</h3>
               <button onClick={() => { setHeatmap(null); setHeatmapFriend(null); }} className="text-zen-500 hover:text-zen-200">

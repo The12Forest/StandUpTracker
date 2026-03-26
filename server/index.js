@@ -17,6 +17,7 @@ const aiRoutes = require('./routes/ai');
 const notificationRoutes = require('./routes/notifications');
 const onboardingRoutes = require('./routes/onboarding');
 const reportRoutes = require('./routes/reports');
+const schedulerRoutes = require('./routes/scheduler');
 const { maintenanceGate } = require('./middleware/guards');
 const { setupSocket } = require('./socket/handler');
 const { dailyStreakCleanup } = require('./utils/streaks');
@@ -102,9 +103,10 @@ app.use('/api/groups', groupRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/reports', reportRoutes);
+app.use('/api/scheduler', schedulerRoutes);
 
 // SPA fallback — serve index.html for all client routes
-const spaPages = ['/app', '/login', '/register', '/admin', '/admin/*', '/leaderboard', '/settings', '/dashboard', '/friends', '/groups', '/streaks', '/setup', '/2fa-setup'];
+const spaPages = ['/app', '/login', '/register', '/admin', '/admin/*', '/leaderboard', '/settings', '/dashboard', '/friends', '/groups', '/streaks', '/scheduler', '/setup', '/2fa-setup'];
 spaPages.forEach(route => {
   app.get(route, (req, res) => {
     if (fs.existsSync(reactDist)) {

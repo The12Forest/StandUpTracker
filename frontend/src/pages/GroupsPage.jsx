@@ -1,15 +1,53 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Users, UserPlus, Crown, LogOut, Trash2, Plus, Check, X, Flame, Clock, Search } from 'lucide-react';
+import { Users, UserPlus, Crown, LogOut, Trash2, Plus, Check, X, Flame, Clock, Search, Trophy, ChevronDown } from 'lucide-react';
 import { api } from '../lib/api';
 import { BentoCard } from '../components/BentoCard';
 import useToastStore from '../stores/useToastStore';
 import useSocketStore from '../stores/useSocketStore';
+import useAuthStore from '../stores/useAuthStore';
 
 const TABS = [
   { key: 'groups', label: 'My Groups', icon: Users },
   { key: 'invites', label: 'Invitations', icon: UserPlus },
   { key: 'create', label: 'Create', icon: Plus },
 ];
+
+const CRITERIA = [
+  { key: 'weeklyTime', label: 'Standing time this week' },
+  { key: 'totalTime', label: 'Total standing time' },
+  { key: 'level', label: 'User level' },
+  { key: 'streak', label: 'Current streak' },
+];
+
+function formatHm(secs) {
+  if (!secs || secs <= 0) return '0m';
+  const h = Math.floor(secs / 3600);
+  const m = Math.round((secs % 3600) / 60);
+  if (h > 0) return m > 0 ? `${h}h ${m}m` : `${h}h`;
+  return `${m}m`;
+}
+
+function criterionValue(m, criterion) {
+  switch (criterion) {
+    case 'weeklyTime': return formatHm(m.weeklySeconds);
+    case 'totalTime': return formatHm(m.totalStandingSeconds);
+    case 'level': return `Lv.${m.level}`;
+    case 'streak': return `${m.currentStreak}d`;
+    default: return '';
+  }
+}
+
+function criterionSuffix(criterion) {
+  switch (criterion) {
+    case 'weeklyTime': return 'this week';
+    case 'totalTime': return 'total';
+    case 'level': return '';
+    case 'streak': return 'streak';
+    default: return '';
+  }
+}
+
+const RANK_COLORS = ['text-yellow-400', 'text-zinc-300', 'text-amber-600'];
 
 export default function GroupsPage() {
   const [tab, setTab] = useState('groups');
@@ -22,6 +60,7 @@ export default function GroupsPage() {
   const [creating, setCreating] = useState(false);
   const toast = useToastStore();
   const socket = useSocketStore((s) => s.socket);
+  const currentUser = useAuthStore((s) => s.user);
   const pendingGroupId = useRef(null);
 
   const loadGroups = useCallback(async () => {
@@ -51,6 +90,25 @@ export default function GroupsPage() {
     return () => socket.off('GROUP_INVITE', onGroupInvite);
   }, [socket, loadInvites]);
 
+  // Real-time leaderboard refresh on timer changes
+  const expandedRef = useRef(expanded);
+  useEffect(() => { expandedRef.current = expanded; }, [expanded]);
+
+  useEffect(() => {
+    if (!socket) return;
+    const refresh = () => {
+      if (expandedRef.current) {
+        api(`/api/groups/${expandedRef.current}`).then(setDetail).catch(() => {});
+      }
+    };
+    socket.on('STATS_UPDATE', refresh);
+    socket.on('LEADERBOARD_UPDATE', refresh);
+    return () => {
+      socket.off('STATS_UPDATE', refresh);
+      socket.off('LEADERBOARD_UPDATE', refresh);
+    };
+  }, [socket]);
+
   const loadDetail = async (groupId) => {
     if (expanded === groupId) {
       setExpanded(null);
@@ -59,19 +117,28 @@ export default function GroupsPage() {
       pendingGroupId.current = null;
       return;
     }
-    // Clear previous state immediately to avoid showing stale data for the new group
     setExpanded(null);
     setDetail(null);
     setInviteUser('');
     pendingGroupId.current = groupId;
     try {
       const data = await api(`/api/groups/${groupId}`);
-      // Only apply if this group is still the intended target (prevents race on rapid clicks)
       if (pendingGroupId.current === groupId) {
         setDetail(data);
         setExpanded(groupId);
       }
     } catch (err) { toast.error(err.message); }
+  };
+
+  const changeCriterion = async (groupId, criterion) => {
+    try {
+      await api(`/api/groups/${groupId}/criterion`, { method: 'PUT', body: JSON.stringify({ criterion }) });
+      // Refresh detail to get re-sorted members
+      const data = await api(`/api/groups/${groupId}`);
+      setDetail(data);
+      // Update groups list too
+      setGroups(prev => prev.map(g => g.groupId === groupId ? { ...g, leaderboardCriterion: criterion } : g));
+    } catch (err) { toast.error(err.data?.error || err.message); }
   };
 
   const createGroup = async () => {
@@ -181,7 +248,7 @@ export default function GroupsPage() {
                       <p className="text-zen-100 font-medium truncate">{g.name}</p>
                       {g.myRole === 'owner' && <Crown size={12} className="text-yellow-400 shrink-0" />}
                     </div>
-                    <div className="flex items-center gap-3 text-xs text-zen-500">
+                    <div className="flex items-center gap-3 text-xs text-zen-400">
                       <span>{g.memberCount} member{g.memberCount !== 1 ? 's' : ''}</span>
                       {g.currentStreak > 0 && (
                         <span className="flex items-center gap-1 text-orange-400">
@@ -189,39 +256,96 @@ export default function GroupsPage() {
                         </span>
                       )}
                       {g.bestStreak > 0 && (
-                        <span className="text-zen-600">Best: {g.bestStreak}d</span>
+                        <span className="text-zen-500">Best: {g.bestStreak}d</span>
                       )}
                     </div>
                   </div>
                 </div>
               </BentoCard>
 
-              {/* Expanded detail */}
+              {/* Expanded detail — leaderboard */}
               {expanded === g.groupId && detail && (
                 <div className="ml-4 mt-2 space-y-3">
                   <BentoCard>
-                    <h4 className="text-sm font-semibold text-zen-200 mb-3">Members</h4>
-                    <div className="space-y-2">
-                      {detail.members.map((m) => (
-                        <div key={m.userId} className="flex items-center gap-3 text-sm">
-                          <div className="w-7 h-7 rounded-full bg-zen-700 flex items-center justify-center text-zen-300 text-xs font-bold">
-                            {m.username[0]?.toUpperCase()}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <span className="text-zen-200">{m.username}</span>
-                            {m.role === 'owner' && <Crown size={10} className="inline ml-1 text-yellow-400" />}
-                            <span className="text-zen-600 text-xs ml-2">Lv.{m.level}</span>
-                          </div>
-                          <div className="flex items-center gap-2 text-xs">
-                            <span className="text-zen-500">{Math.round(m.todaySeconds / 60)}m today</span>
-                            {m.metThreshold ? (
-                              <span className="text-accent-400 flex items-center gap-0.5"><Check size={10} /> Done</span>
-                            ) : (
-                              <span className="text-zen-600 flex items-center gap-0.5"><Clock size={10} /> Pending</span>
-                            )}
-                          </div>
+                    {/* Criterion header */}
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2">
+                        <Trophy size={14} className="text-accent-400" />
+                        <span className="text-sm font-semibold text-zen-200">Leaderboard</span>
+                      </div>
+                      {g.myRole === 'owner' ? (
+                        <div className="relative">
+                          <select
+                            value={detail.leaderboardCriterion || 'weeklyTime'}
+                            onChange={(e) => changeCriterion(g.groupId, e.target.value)}
+                            className="bg-zen-800 border border-zen-700/50 rounded-lg text-xs text-zen-300 pl-2 pr-7 py-1.5 appearance-none cursor-pointer"
+                          >
+                            {CRITERIA.map(c => (
+                              <option key={c.key} value={c.key}>{c.label}</option>
+                            ))}
+                          </select>
+                          <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-zen-500 pointer-events-none" />
                         </div>
-                      ))}
+                      ) : (
+                        <span className="text-[11px] text-zen-400">
+                          Ranked by: {CRITERIA.find(c => c.key === detail.leaderboardCriterion)?.label || 'Standing time this week'}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Member rows */}
+                    <div className="space-y-1">
+                      {detail.members.map((m, idx) => {
+                        const isMe = m.userId === currentUser?.userId;
+                        const rank = idx + 1;
+                        const criterion = detail.leaderboardCriterion || 'weeklyTime';
+                        return (
+                          <div
+                            key={m.userId}
+                            className={`flex items-center gap-3 text-sm px-3 py-2 rounded-lg transition-colors ${
+                              isMe ? 'bg-accent-500/8 border border-accent-500/20' : 'hover:bg-zen-800/30'
+                            }`}
+                          >
+                            {/* Rank */}
+                            <span className={`w-6 text-center font-bold text-sm ${
+                              rank <= 3 ? RANK_COLORS[rank - 1] : 'text-zen-500'
+                            }`}>
+                              {rank}
+                            </span>
+                            {/* Avatar */}
+                            <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                              rank === 1 ? 'bg-yellow-500/20 text-yellow-400'
+                                : rank === 2 ? 'bg-zinc-400/20 text-zinc-300'
+                                : rank === 3 ? 'bg-amber-600/20 text-amber-500'
+                                : 'bg-zen-700 text-zen-300'
+                            }`}>
+                              {m.username[0]?.toUpperCase()}
+                            </div>
+                            {/* Name + level */}
+                            <div className="flex-1 min-w-0">
+                              <span className={`${isMe ? 'text-zen-100 font-semibold' : 'text-zen-200'} truncate`}>{m.username}</span>
+                              {m.role === 'owner' && <Crown size={10} className="inline ml-1 text-yellow-400" />}
+                              <span className="text-zen-400 text-xs ml-2">Lv.{m.level}</span>
+                            </div>
+                            {/* Criterion value */}
+                            <div className="text-right shrink-0">
+                              <span className="text-zen-200 text-xs font-medium">{criterionValue(m, criterion)}</span>
+                              {criterionSuffix(criterion) && (
+                                <span className="text-zen-500 text-[10px] ml-1">{criterionSuffix(criterion)}</span>
+                              )}
+                            </div>
+                            {/* Today + goal */}
+                            <div className="flex items-center gap-2 text-xs shrink-0 ml-2">
+                              <span className="text-zen-400">{Math.round(m.todaySeconds / 60)}m today</span>
+                              {m.metThreshold ? (
+                                <span className="text-accent-400 flex items-center gap-0.5"><Check size={10} /> Done</span>
+                              ) : (
+                                <span className="text-zen-500 flex items-center gap-0.5"><Clock size={10} /> Pending</span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </BentoCard>
 
@@ -277,7 +401,7 @@ export default function GroupsPage() {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-zen-100 font-medium">{inv.name}</p>
-                <p className="text-xs text-zen-500">{inv.memberCount} members</p>
+                <p className="text-xs text-zen-400">{inv.memberCount} members</p>
               </div>
               <div className="flex gap-2">
                 <button onClick={() => acceptInvite(inv.groupId)} className="btn-accent text-xs flex items-center gap-1">
@@ -295,7 +419,7 @@ export default function GroupsPage() {
       {/* Create Group */}
       {tab === 'create' && (
         <BentoCard className="max-w-md">
-          <h3 className="text-sm font-semibold text-zen-300 mb-4">Create a New Group</h3>
+          <h3 className="text-sm font-semibold text-zen-200 mb-4">Create a New Group</h3>
           <div className="flex gap-3">
             <input
               value={newName}
@@ -309,7 +433,7 @@ export default function GroupsPage() {
               {creating ? 'Creating...' : 'Create'}
             </button>
           </div>
-          <p className="text-xs text-zen-600 mt-3">You'll be the owner of this group and can invite others.</p>
+          <p className="text-xs text-zen-400 mt-3">You&apos;ll be the owner of this group and can invite others.</p>
         </BentoCard>
       )}
     </div>

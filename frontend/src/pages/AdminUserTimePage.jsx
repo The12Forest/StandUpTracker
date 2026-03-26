@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Clock, Check, Loader2, X, Calendar, Pencil, RotateCcw, Eye, EyeOff, Coffee, Flag, Undo2 } from 'lucide-react';
+import { ArrowLeft, Clock, Check, Loader2, X, Calendar, Pencil, RotateCcw, Eye, EyeOff, Coffee, Flag, Undo2, AlertTriangle } from 'lucide-react';
 import { api } from '../lib/api';
 import { BentoCard } from '../components/BentoCard';
 import useToastStore from '../stores/useToastStore';
@@ -262,6 +262,7 @@ export default function AdminUserTimePage() {
                 const recordedSeconds = data.trackingMap[date] || 0;
                 const hasGoalOverride = localOverrides[date] !== undefined;
                 const isManualOverride = data.manualOverrideMap?.[date];
+                const isForgottenCheckout = data.forgottenCheckoutMap?.[date];
                 const isOffDay = !!localOffDays[date];
                 const reportCleared = reportClearedMap[date];
                 const isToday = date === today;
@@ -315,6 +316,11 @@ export default function AdminUserTimePage() {
                               <RotateCcw size={12} />
                             </button>
                           </>
+                        )}
+                        {isForgottenCheckout && (
+                          <span className="flex items-center gap-0.5 text-[10px] text-warn-400 bg-warn-500/10 px-1 py-0.5 rounded" title="Contains a forgotten checkout session">
+                            <AlertTriangle size={10} /> FC
+                          </span>
                         )}
                         {isTimeSaving && <Loader2 size={14} className="text-accent-400 animate-spin" />}
                         {isTimeSaved && <Check size={14} className="text-accent-400" />}

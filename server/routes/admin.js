@@ -285,12 +285,21 @@ router.put('/users/:userId', requireRole('super_admin'), async (req, res) => {
     const user = await User.findOne({ userId: req.params.userId });
     if (!user) return res.status(404).json({ error: 'User not found' });
 
+    // Block self-demotion for super_admins
     if (user.userId === req.user.userId) {
+      if (role && role !== req.user.role) {
+        return res.status(403).json({ error: 'Super Admins cannot change their own role' });
+      }
+      // Allow other self-modifications (active, blockedUntil) to fall through — but the generic guard below still blocks
       return res.status(400).json({ error: 'Cannot modify your own account here' });
     }
 
     const before = { role: user.role, active: user.active };
-    if (role && ['user', 'moderator', 'admin'].includes(role)) {
+    if (role && ['user', 'moderator', 'admin', 'super_admin'].includes(role)) {
+      // Only a super_admin can promote to super_admin
+      if (role === 'super_admin' && req.user.role !== 'super_admin') {
+        return res.status(403).json({ error: 'Only a Super Admin can promote users to Super Admin' });
+      }
       user.role = role;
     }
     if (typeof active === 'boolean') {
@@ -911,6 +920,73 @@ router.put('/users/:userId/password', requireRole('super_admin'), async (req, re
   }
 });
 
+// ─── Admin: Force-change username (bypasses global setting + per-user flag) ───
+router.put('/users/:userId/username', requireRole('super_admin'), async (req, res) => {
+  try {
+    const { username } = req.body;
+    if (!username || typeof username !== 'string') {
+      return res.status(400).json({ error: 'Username is required' });
+    }
+    const trimmed = username.trim();
+    if (trimmed.length < 3) return res.status(400).json({ error: 'Username must be at least 3 characters' });
+    if (trimmed.length > 32) return res.status(400).json({ error: 'Username must be at most 32 characters' });
+    if (!/^[a-zA-Z0-9_]+$/.test(trimmed)) return res.status(400).json({ error: 'Username may only contain letters, numbers, and underscores' });
+
+    const user = await User.findOne({ userId: req.params.userId });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    if (trimmed === user.username) return res.json({ message: 'Username unchanged' });
+
+    // Uniqueness check
+    const existing = await User.findOne({ username: { $regex: new RegExp(`^${trimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } });
+    if (existing && existing.userId !== user.userId) {
+      return res.status(409).json({ error: 'That username is already taken' });
+    }
+
+    const oldUsername = user.username;
+    user.username = trimmed;
+    await user.save();
+
+    await AuditLog.create({
+      actorId: req.user.userId, actorRole: req.user.role,
+      targetId: user.userId, action: 'admin_username_change',
+      details: { oldUsername, newUsername: trimmed }, ip: req.ip,
+    });
+
+    logger.info(`Admin changed username: ${oldUsername} → ${trimmed}`, { source: 'admin', userId: req.user.userId });
+    res.json({ message: 'Username updated', username: trimmed });
+  } catch (err) {
+    if (err.code === 11000) return res.status(409).json({ error: 'That username is already taken' });
+    res.status(500).json({ error: 'Failed to change username' });
+  }
+});
+
+// ─── Admin: Toggle per-user canChangeUsername flag ───
+router.put('/users/:userId/can-change-username', requireRole('super_admin'), async (req, res) => {
+  try {
+    const { canChangeUsername } = req.body;
+    if (typeof canChangeUsername !== 'boolean') {
+      return res.status(400).json({ error: 'canChangeUsername must be a boolean' });
+    }
+    const user = await User.findOne({ userId: req.params.userId });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    user.canChangeUsername = canChangeUsername;
+    await user.save();
+
+    await AuditLog.create({
+      actorId: req.user.userId, actorRole: req.user.role,
+      targetId: user.userId, action: 'toggle_can_change_username',
+      details: { canChangeUsername, username: user.username }, ip: req.ip,
+    });
+
+    logger.info(`Admin ${canChangeUsername ? 'enabled' : 'disabled'} username changes for ${user.username}`, { source: 'admin', userId: req.user.userId });
+    res.json({ message: `Username changes ${canChangeUsername ? 'enabled' : 'disabled'} for ${user.username}` });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update permission' });
+  }
+});
+
 // ─── Admin: Delete user ───
 router.delete('/users/:userId', requireRole('super_admin'), async (req, res) => {
   try {
@@ -1069,6 +1145,7 @@ router.get('/users/:userId/daily-times', requireRole(...adminRoles), async (req,
     const trackingMap = {};
     const manualOverrideMap = {};
     const reportClearedMap = {};
+    const forgottenCheckoutMap = {};
     tracking.forEach(d => {
       trackingMap[d.date] = d.seconds;
       if (d.manualOverride) manualOverrideMap[d.date] = true;
@@ -1081,6 +1158,10 @@ router.get('/users/:userId/daily-times', requireRole(...adminRoles), async (req,
           restoredBy: d.reportRestoredBy,
           restoredAt: d.reportRestoredAt,
         };
+      }
+      // Check if any session was a forgotten checkout
+      if (d.sessions?.some(s => s.forgottenCheckout)) {
+        forgottenCheckoutMap[d.date] = true;
       }
     });
 
@@ -1107,6 +1188,7 @@ router.get('/users/:userId/daily-times', requireRole(...adminRoles), async (req,
       trackingMap,
       manualOverrideMap,
       reportClearedMap,
+      forgottenCheckoutMap,
       overrideMap,
       offDayMap,
       startDate: startStr,

@@ -1,13 +1,17 @@
-import { useEffect } from 'react';
-import { Play, Square, Clock, Flame, Target, TrendingUp } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Play, Square, Clock, Flame, Target, TrendingUp, AlertTriangle } from 'lucide-react';
 import useTimerStore from '../stores/useTimerStore';
 import useAuthStore from '../stores/useAuthStore';
 import { BentoCard, BentoGrid, StatCard } from '../components/BentoCard';
 import { formatTime, formatMinutes, levelFromSeconds } from '../lib/utils';
+import useForgottenCheckout from '../hooks/useForgottenCheckout';
+import ForgottenCheckoutModal from '../components/ForgottenCheckoutModal';
 
 export default function TimerPage() {
   const { running, elapsed, todayTotal, start, stop, loadToday, fetchState } = useTimerStore();
   const user = useAuthStore((s) => s.user);
+  const { forgotten, finalize, discard } = useForgottenCheckout();
+  const [showForgottenModal, setShowForgottenModal] = useState(false);
 
   useEffect(() => { loadToday(); fetchState(); }, [loadToday, fetchState]);
 
@@ -18,6 +22,29 @@ export default function TimerPage() {
 
   return (
     <div className="space-y-6">
+      {/* Forgotten checkout banner */}
+      {forgotten && (
+        <div
+          className="flex items-center gap-3 px-4 py-3 rounded-xl bg-warn-500/10 border border-warn-500/30 cursor-pointer hover:bg-warn-500/15 transition-colors"
+          onClick={() => setShowForgottenModal(true)}
+        >
+          <AlertTriangle size={18} className="text-warn-400 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm text-zen-200 font-medium">Forgotten checkout detected</p>
+            <p className="text-xs text-zen-400">Your timer has been running for over {forgotten.thresholdHours}h. Click to resolve.</p>
+          </div>
+          <span className="text-xs text-warn-400 font-medium shrink-0">Resolve</span>
+        </div>
+      )}
+      {showForgottenModal && forgotten && (
+        <ForgottenCheckoutModal
+          forgotten={forgotten}
+          onFinalize={finalize}
+          onDiscard={discard}
+          onClose={() => { setShowForgottenModal(false); fetchState(); loadToday(); }}
+        />
+      )}
+
       {/* Timer Hero */}
       <BentoCard pulse={running} className="text-center py-10 md:col-span-2 xl:col-span-3">
         {/* Session timer */}

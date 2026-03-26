@@ -40,6 +40,9 @@ export default function SettingsPage() {
   });
   const [reminderTime, setReminderTime] = useState('12:00');
   const [goalError, setGoalError] = useState('');
+  const [newUsername, setNewUsername] = useState('');
+  const [usernameError, setUsernameError] = useState('');
+  const [usernameSaving, setUsernameSaving] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -68,6 +71,26 @@ export default function SettingsPage() {
     } catch (err) {
       toast.error(err.data?.error || err.message);
     }
+  };
+
+  const handleUsernameChange = async () => {
+    const trimmed = newUsername.trim();
+    if (!trimmed) { setUsernameError('Username is required'); return; }
+    if (trimmed.length < 3) { setUsernameError('Username must be at least 3 characters'); return; }
+    if (trimmed.length > 32) { setUsernameError('Username must be at most 32 characters'); return; }
+    if (!/^[a-zA-Z0-9_]+$/.test(trimmed)) { setUsernameError('Only letters, numbers, and underscores allowed'); return; }
+    if (trimmed === user?.username) { setUsernameError('That is already your username'); return; }
+    setUsernameError('');
+    setUsernameSaving(true);
+    try {
+      await api('/api/auth/username', { method: 'PUT', body: JSON.stringify({ username: trimmed }) });
+      toast.success('Username updated');
+      setNewUsername('');
+      await refreshUser();
+    } catch (err) {
+      setUsernameError(err.data?.error || err.message);
+    }
+    setUsernameSaving(false);
   };
 
   const handleEmailChange = async () => {
@@ -231,6 +254,25 @@ export default function SettingsPage() {
             <label className="text-xs text-zen-500 mb-1 block">Username</label>
             <input value={user?.username || ''} disabled className="glass-input w-full opacity-60" />
           </div>
+          {user?.canChangeUsername && (
+            <div>
+              <label className="text-xs text-zen-500 mb-1 block">New Username</label>
+              <div className="flex gap-2">
+                <input
+                  value={newUsername}
+                  onChange={(e) => { setNewUsername(e.target.value); setUsernameError(''); }}
+                  className="glass-input flex-1"
+                  placeholder="Enter new username"
+                  maxLength={32}
+                />
+                <button onClick={handleUsernameChange} disabled={usernameSaving} className="btn-accent text-xs whitespace-nowrap">
+                  {usernameSaving ? 'Saving...' : 'Change'}
+                </button>
+              </div>
+              {usernameError && <p className="text-xs text-danger-400 mt-1">{usernameError}</p>}
+              <p className="text-[10px] text-zen-600 mt-1">3–32 characters, letters, numbers, and underscores only</p>
+            </div>
+          )}
           <div>
             <label className="text-xs text-zen-500 mb-1 block">Email</label>
             <div className="flex items-center gap-2">

@@ -5,7 +5,7 @@ import {
   Search, RefreshCw, Eye, EyeOff, Sliders, UserCheck, Calendar,
   Trash2, Lock, Unlock, KeyRound, MailCheck, Ban, HardDrive,
   Cpu, Clock, Database, TrendingUp, Globe, MailX, UsersRound, Mail,
-  Brain, Info, BarChart3, Heart, UserPlus, Flame, Wifi, Zap
+  Brain, Info, BarChart3, Heart, UserPlus, Flame, Wifi, Zap, PenLine
 } from 'lucide-react';
 import { Bar } from 'react-chartjs-2';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip as ChartTooltip, Legend } from 'chart.js';
@@ -342,6 +342,9 @@ function UsersTab() {
   const [selected, setSelected] = useState(new Set());
   const [passwordModal, setPasswordModal] = useState(null);
   const [newPw, setNewPw] = useState('');
+  const [usernameModal, setUsernameModal] = useState(null); // { userId, username }
+  const [newUsername, setNewUsername] = useState('');
+  const [usernameError, setUsernameError] = useState('');
   const [viewDeleted, setViewDeleted] = useState(false);
   const toast = useToastStore();
   const navigate = useNavigate();
@@ -356,12 +359,15 @@ function UsersTab() {
 
   useEffect(() => { fetchUsers(); }, [fetchUsers]);
 
-  const updateRole = async (userId, role) => {
+  const updateRole = async (userId, role, username) => {
+    if (role === 'super_admin') {
+      if (!confirm(`Promote ${username} to Super Admin? They will have full administrative access including the ability to promote other users.`)) return;
+    }
     try {
       await api(`/api/admin/users/${userId}`, { method: 'PUT', body: JSON.stringify({ role }) });
       toast.success('Role updated');
       fetchUsers();
-    } catch (err) { toast.error(err.message); }
+    } catch (err) { toast.error(err.data?.error || err.message); }
   };
 
   const handleImpersonate = async (userId) => {
@@ -386,6 +392,30 @@ function UsersTab() {
       toast.success('Password updated');
       setPasswordModal(null);
       setNewPw('');
+    } catch (err) { toast.error(err.message); }
+  };
+
+  const handleSetUsername = async () => {
+    if (!usernameModal) return;
+    const trimmed = newUsername.trim();
+    if (trimmed.length < 3) { setUsernameError('Must be at least 3 characters'); return; }
+    if (trimmed.length > 32) { setUsernameError('Must be at most 32 characters'); return; }
+    if (!/^[a-zA-Z0-9_]+$/.test(trimmed)) { setUsernameError('Only letters, numbers, and underscores'); return; }
+    setUsernameError('');
+    try {
+      await api(`/api/admin/users/${usernameModal.userId}/username`, { method: 'PUT', body: JSON.stringify({ username: trimmed }) });
+      toast.success('Username updated');
+      setUsernameModal(null);
+      setNewUsername('');
+      fetchUsers();
+    } catch (err) { setUsernameError(err.data?.error || err.message); }
+  };
+
+  const handleToggleCanChangeUsername = async (userId, current) => {
+    try {
+      await api(`/api/admin/users/${userId}/can-change-username`, { method: 'PUT', body: JSON.stringify({ canChangeUsername: !current }) });
+      toast.success(`Username changes ${!current ? 'enabled' : 'disabled'}`);
+      fetchUsers();
     } catch (err) { toast.error(err.message); }
   };
 
@@ -502,6 +532,27 @@ function UsersTab() {
         </div>
       )}
 
+      {/* Set Username Modal */}
+      {usernameModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => { setUsernameModal(null); setUsernameError(''); }}>
+          <div className="glass-card rounded-xl max-w-sm w-full p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-sm font-semibold text-zen-200">Change Username for {usernameModal.username}</h3>
+            <input
+              value={newUsername}
+              onChange={(e) => { setNewUsername(e.target.value); setUsernameError(''); }}
+              className="glass-input w-full"
+              placeholder="New username (3–32 chars)"
+              maxLength={32}
+            />
+            {usernameError && <p className="text-xs text-danger-400">{usernameError}</p>}
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => { setUsernameModal(null); setUsernameError(''); }} className="btn-ghost text-xs">Cancel</button>
+              <button onClick={handleSetUsername} className="btn-accent text-xs">Change Username</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <BentoCard className="p-0 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -548,14 +599,17 @@ function UsersTab() {
                     {viewDeleted ? (
                       <span className="text-xs text-zen-500">{u.role}</span>
                     ) : (
-                      <select value={u.role} onChange={(e) => updateRole(u.userId, e.target.value)}
-                        className="bg-zen-800 border border-zen-700/50 rounded-lg text-xs text-zen-300 px-2 py-1"
-                        disabled={!isSuperAdmin || u.role === 'super_admin'}>
-                        <option value="user">User</option>
-                        <option value="moderator">Moderator</option>
-                        <option value="admin">Admin</option>
-                        <option value="super_admin">Super Admin</option>
-                      </select>
+                      <div className="flex items-center gap-1">
+                        <select value={u.role} onChange={(e) => updateRole(u.userId, e.target.value, u.username)}
+                          className="bg-zen-800 border border-zen-700/50 rounded-lg text-xs text-zen-300 px-2 py-1"
+                          disabled={!isSuperAdmin || u.userId === currentUser?.userId}>
+                          <option value="user">User</option>
+                          <option value="moderator">Moderator</option>
+                          <option value="admin">Admin</option>
+                          {isSuperAdmin && <option value="super_admin">Super Admin</option>}
+                        </select>
+                        {u.userId === currentUser?.userId && <span className="text-[10px] text-zen-600">(you)</span>}
+                      </div>
                     )}
                   </td>
                   <td className="px-4 py-3">
@@ -603,6 +657,12 @@ function UsersTab() {
                                   <MailX size={11} /> Re-verify
                                 </button>
                               )}
+                              <button onClick={() => { setUsernameModal({ userId: u.userId, username: u.username }); setNewUsername(''); }} className="text-[10px] px-1.5 py-0.5 rounded text-zen-500 hover:bg-zen-700/50 flex items-center gap-0.5" title="Change Username">
+                                <PenLine size={11} /> Username
+                              </button>
+                              <button onClick={() => handleToggleCanChangeUsername(u.userId, u.canChangeUsername !== false)} className={`text-[10px] px-1.5 py-0.5 rounded flex items-center gap-0.5 ${u.canChangeUsername !== false ? 'text-accent-400 hover:bg-accent-500/10' : 'text-danger-400 hover:bg-danger-500/10'}`} title={u.canChangeUsername !== false ? 'Deny self-rename' : 'Allow self-rename'}>
+                                {u.canChangeUsername !== false ? <><Unlock size={11} /> Rename: On</> : <><Lock size={11} /> Rename: Off</>}
+                              </button>
                               <button onClick={() => setPasswordModal(u.userId)} className="text-[10px] px-1.5 py-0.5 rounded text-zen-500 hover:bg-zen-700/50 flex items-center gap-0.5" title="Set Password">
                                 <KeyRound size={11} /> Password
                               </button>
@@ -701,6 +761,8 @@ function SettingsTab() {
   const [tooltip, setTooltip] = useState(null);
   const [visiblePasswords, setVisiblePasswords] = useState({});
   const toast = useToastStore();
+  const currentUser = useAuthStore((s) => s.user);
+  const isSuperAdmin = currentUser?.role === 'super_admin';
 
   const SENSITIVE_KEYS = new Set(['smtpPass', 'jwtSecret', 'vapidPrivateKey']);
   const HIDDEN_KEYS = new Set(['defaultTheme']);
@@ -784,7 +846,9 @@ function SettingsTab() {
     sections[section].push({ key, ...meta });
   }
 
-  const sectionOrder = ['enforcement', 'thresholds', 'reporting', 'push', 'server', 'security', 'client', 'mail', 'auth', 'social', 'groups', 'emailAdmin', 'ai', 'logging', 'general'];
+  const SUPER_ADMIN_SECTIONS = new Set(['mail', 'security']);
+  const sectionOrder = ['enforcement', 'thresholds', 'reporting', 'push', 'server', 'security', 'client', 'mail', 'auth', 'social', 'groups', 'emailAdmin', 'ai', 'logging', 'general']
+    .filter(s => !SUPER_ADMIN_SECTIONS.has(s) || isSuperAdmin);
 
   return (
     <div className="space-y-6">

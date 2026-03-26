@@ -23,6 +23,7 @@ router.get('/', async (req, res) => {
       bestStreak: g.bestStreak,
       lastSyncDate: g.lastSyncDate,
       myRole: g.members.find(m => m.userId === req.user.userId)?.role,
+      leaderboardCriterion: g.leaderboardCriterion || 'weeklyTime',
     }));
     res.json({ groups: result });
   } catch (err) {
@@ -50,7 +51,7 @@ router.get('/invites/pending', async (req, res) => {
   }
 });
 
-// Get group detail (members + streak)
+// Get group detail (members + streak + leaderboard)
 router.get('/:groupId', async (req, res) => {
   try {
     const group = await Group.findOne({ groupId: req.params.groupId });
@@ -60,35 +61,65 @@ router.get('/:groupId', async (req, res) => {
     if (!isMember) return res.status(403).json({ error: 'Not a member of this group' });
 
     const memberIds = group.members.map(m => m.userId);
-    const users = await User.find({ userId: { $in: memberIds } }).select('userId username level');
+    const users = await User.find({ userId: { $in: memberIds } }).select('userId username level totalStandingSeconds currentStreak');
     const userMap = {};
     users.forEach(u => { userMap[u.userId] = u; });
 
-    // Check today's goal for each member using their effective daily goal
+    // Today's tracking
     const today = new Date().toISOString().slice(0, 10);
     const todayData = await TrackingData.find({ userId: { $in: memberIds }, date: today });
     const todayMap = {};
     todayData.forEach(d => { todayMap[d.userId] = d.seconds; });
 
-    // Load full user docs for goal calculation
+    // Weekly tracking (respects firstDayOfWeek)
+    const firstDayOfWeek = await Settings.get('firstDayOfWeek') || 'monday';
+    const now = new Date();
+    const jsDay = now.getDay(); // 0=Sun
+    const offset = firstDayOfWeek === 'monday'
+      ? (jsDay === 0 ? 6 : jsDay - 1)
+      : jsDay;
+    const weekStart = new Date(now);
+    weekStart.setDate(weekStart.getDate() - offset);
+    const weekStartStr = weekStart.toISOString().slice(0, 10);
+
+    const weekData = await TrackingData.find({
+      userId: { $in: memberIds },
+      date: { $gte: weekStartStr, $lte: today },
+    });
+    const weekMap = {};
+    weekData.forEach(d => {
+      weekMap[d.userId] = (weekMap[d.userId] || 0) + d.seconds;
+    });
+
+    // Goal calculation
     const memberUsers = await User.find({ userId: { $in: memberIds } }).select('userId dailyGoalMinutes');
     const memberGoalMap = {};
     for (const mu of memberUsers) {
       memberGoalMap[mu.userId] = await getEffectiveGoalMinutes(mu);
     }
 
+    const criterion = group.leaderboardCriterion || 'weeklyTime';
+
     const members = group.members.map(m => {
       const memberGoal = memberGoalMap[m.userId] || 60;
+      const u = userMap[m.userId];
       return {
         userId: m.userId,
-        username: userMap[m.userId]?.username || 'Unknown',
-        level: userMap[m.userId]?.level || 1,
+        username: u?.username || 'Unknown',
+        level: u?.level || 1,
         role: m.role,
         joinedAt: m.joinedAt,
         todaySeconds: todayMap[m.userId] || 0,
         metThreshold: (todayMap[m.userId] || 0) >= memberGoal * 60,
+        totalStandingSeconds: u?.totalStandingSeconds || 0,
+        currentStreak: u?.currentStreak || 0,
+        weeklySeconds: weekMap[m.userId] || 0,
       };
     });
+
+    // Sort by active criterion (descending)
+    const sortKey = { weeklyTime: 'weeklySeconds', totalTime: 'totalStandingSeconds', level: 'level', streak: 'currentStreak' }[criterion] || 'weeklySeconds';
+    members.sort((a, b) => b[sortKey] - a[sortKey]);
 
     res.json({
       groupId: group.groupId,
@@ -98,6 +129,7 @@ router.get('/:groupId', async (req, res) => {
       currentStreak: group.currentStreak,
       bestStreak: group.bestStreak,
       lastSyncDate: group.lastSyncDate,
+      leaderboardCriterion: criterion,
     });
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch group' });
@@ -121,14 +153,42 @@ router.post('/', requireVerified, async (req, res) => {
       return res.status(400).json({ error: 'Group name must be 2-50 characters' });
     }
 
+    const defaultCriterion = await Settings.get('defaultGroupLeaderboardCriterion') || 'weeklyTime';
+
     const group = await Group.create({
       name: name.trim(),
       members: [{ userId: req.user.userId, role: 'owner' }],
+      leaderboardCriterion: defaultCriterion,
     });
 
     res.status(201).json({ groupId: group.groupId, name: group.name });
   } catch (err) {
     res.status(500).json({ error: 'Failed to create group' });
+  }
+});
+
+// Update group leaderboard criterion (owner only)
+router.put('/:groupId/criterion', async (req, res) => {
+  try {
+    const { criterion } = req.body;
+    const valid = ['weeklyTime', 'totalTime', 'level', 'streak'];
+    if (!criterion || !valid.includes(criterion)) {
+      return res.status(400).json({ error: `Criterion must be one of: ${valid.join(', ')}` });
+    }
+
+    const group = await Group.findOne({ groupId: req.params.groupId });
+    if (!group) return res.status(404).json({ error: 'Group not found' });
+
+    const member = group.members.find(m => m.userId === req.user.userId);
+    if (!member || member.role !== 'owner') {
+      return res.status(403).json({ error: 'Only the group owner can change the leaderboard criterion' });
+    }
+
+    group.leaderboardCriterion = criterion;
+    await group.save();
+    res.json({ message: 'Leaderboard criterion updated', criterion });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update criterion' });
   }
 });
 

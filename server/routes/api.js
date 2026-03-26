@@ -9,6 +9,8 @@ const { syncFriendStreaks, syncGroupStreaks } = require('../utils/streaks');
 const { getEffectiveGoalMinutes, getSetting, getMinActivityThresholdSeconds } = require('../utils/settings');
 const { recalcUserStats } = require('../utils/recalcStats');
 const { sendPushNotification } = require('../utils/pushSender');
+const AuditLog = require('../models/AuditLog');
+const Settings = require('../models/Settings');
 
 const router = express.Router();
 
@@ -455,6 +457,160 @@ router.put('/my-times/:date', (req, res) => {
 });
 router.delete('/my-times/:date/override', (req, res) => {
   res.status(403).json({ error: 'Time editing is restricted to administrators' });
+});
+
+// ─── Forgotten Checkout ───
+
+// Detect stale timer (forgotten checkout)
+router.get('/timer/forgotten-checkout', requireVerified, async (req, res) => {
+  try {
+    const u = await User.findOne({ userId: req.user.userId }).select('timerRunning timerStartedAt');
+    if (!u || !u.timerRunning || !u.timerStartedAt) {
+      return res.json({ forgotten: false });
+    }
+
+    const thresholdHours = await Settings.get('forgottenCheckoutThresholdHours') || 8;
+    const elapsed = Date.now() - u.timerStartedAt.getTime();
+    const thresholdMs = thresholdHours * 60 * 60 * 1000;
+
+    if (elapsed >= thresholdMs) {
+      return res.json({
+        forgotten: true,
+        startedAt: u.timerStartedAt.getTime(),
+        elapsedMs: elapsed,
+        thresholdHours,
+      });
+    }
+
+    res.json({ forgotten: false });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to check forgotten checkout' });
+  }
+});
+
+// Finalize forgotten checkout with corrected end time
+router.post('/timer/forgotten-checkout/finalize', requireVerified, async (req, res) => {
+  try {
+    const { correctedEndTime } = req.body;
+    if (!correctedEndTime) {
+      return res.status(400).json({ error: 'correctedEndTime required (ISO string or timestamp)' });
+    }
+
+    const u = await User.findOneAndUpdate(
+      { userId: req.user.userId, timerRunning: true },
+      { $set: { timerRunning: false, timerStartedAt: null } },
+      { new: false }
+    );
+    if (!u || !u.timerStartedAt) {
+      return res.status(409).json({ error: 'Timer not running' });
+    }
+
+    const startedAt = u.timerStartedAt;
+    const endTime = new Date(correctedEndTime);
+
+    if (isNaN(endTime.getTime())) {
+      // Re-enable timer since we failed to process
+      await User.updateOne({ userId: req.user.userId }, { $set: { timerRunning: true, timerStartedAt: startedAt } });
+      return res.status(400).json({ error: 'Invalid correctedEndTime' });
+    }
+
+    if (endTime <= startedAt) {
+      await User.updateOne({ userId: req.user.userId }, { $set: { timerRunning: true, timerStartedAt: startedAt } });
+      return res.status(400).json({ error: 'End time must be after start time' });
+    }
+
+    const sessionMs = endTime.getTime() - startedAt.getTime();
+    const sessionSeconds = Math.min(Math.max(Math.round(sessionMs / 1000), 0), 86400);
+
+    if (sessionSeconds >= 1) {
+      const date = startedAt.toISOString().slice(0, 10);
+      await TrackingData.findOneAndUpdate(
+        { userId: req.user.userId, date },
+        {
+          $inc: { seconds: sessionSeconds },
+          $push: {
+            sessions: {
+              start: startedAt,
+              end: endTime,
+              duration: sessionSeconds,
+              forgottenCheckout: true,
+            },
+          },
+        },
+        { upsert: true, new: true }
+      );
+
+      await recalcUserStats(req.user.userId);
+      syncFriendStreaks(req.user.userId).catch(() => {});
+      syncGroupStreaks(req.user.userId).catch(() => {});
+
+      // Audit log
+      await AuditLog.create({
+        action: 'forgotten_checkout_finalize',
+        performedBy: req.user.userId,
+        target: req.user.userId,
+        details: {
+          startedAt: startedAt.toISOString(),
+          correctedEndTime: endTime.toISOString(),
+          sessionSeconds,
+          date,
+        },
+      });
+    }
+
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`user:${req.user.userId}`).emit('TIMER_SYNC', {
+        running: false,
+        startedAt: null,
+        serverTime: Date.now(),
+      });
+      const stats = await recalcUserStats(req.user.userId);
+      io.to(`user:${req.user.userId}`).emit('STATS_UPDATE', stats);
+      io.to(`friends:${req.user.userId}`).emit('FRIEND_STATS_UPDATE', { userId: req.user.userId });
+      io.to('authenticated').emit('LEADERBOARD_UPDATE');
+    }
+
+    res.json({ message: 'Forgotten checkout finalized', sessionSeconds });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to finalize forgotten checkout' });
+  }
+});
+
+// Discard forgotten checkout (clear timer without saving)
+router.post('/timer/forgotten-checkout/discard', requireVerified, async (req, res) => {
+  try {
+    const u = await User.findOneAndUpdate(
+      { userId: req.user.userId, timerRunning: true },
+      { $set: { timerRunning: false, timerStartedAt: null } },
+      { new: false }
+    );
+    if (!u) {
+      return res.status(409).json({ error: 'Timer not running' });
+    }
+
+    await AuditLog.create({
+      action: 'forgotten_checkout_discard',
+      performedBy: req.user.userId,
+      target: req.user.userId,
+      details: {
+        startedAt: u.timerStartedAt?.toISOString(),
+      },
+    });
+
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`user:${req.user.userId}`).emit('TIMER_SYNC', {
+        running: false,
+        startedAt: null,
+        serverTime: Date.now(),
+      });
+    }
+
+    res.json({ message: 'Forgotten checkout discarded' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to discard forgotten checkout' });
+  }
 });
 
 module.exports = router;
