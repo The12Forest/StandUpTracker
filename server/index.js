@@ -23,6 +23,7 @@ const { setupSocket } = require('./socket/handler');
 const { dailyStreakCleanup } = require('./utils/streaks');
 const { runNotificationScheduler } = require('./utils/notifications');
 const { isSetupComplete, getSetting } = require('./utils/settings');
+const Session = require('./models/Session');
 
 const fs = require('fs');
 
@@ -161,6 +162,12 @@ async function start() {
 
   // Notification scheduler — runs every hour
   setInterval(() => { runNotificationScheduler(io).catch(() => {}); }, 60 * 60 * 1000);
+
+  // Session cleanup — delete expired sessions every hour
+  // (MongoDB TTL index also handles this, but this ensures prompt cleanup)
+  setInterval(() => {
+    Session.deleteMany({ expiresAt: { $lt: new Date() } }).catch(() => {});
+  }, 60 * 60 * 1000);
 
   // Read port from DB settings, fallback to 3000
   let port = 3000;

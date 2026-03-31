@@ -1,10 +1,10 @@
 const express = require('express');
 const os = require('os');
-const jwt = require('jsonwebtoken');
 const argon2 = require('argon2');
 const { authenticate, requireRole } = require('../middleware/auth');
 const { softBanCheck, lastActiveTouch } = require('../middleware/guards');
 const User = require('../models/User');
+const Session = require('../models/Session');
 const Log = require('../models/Log');
 const Settings = require('../models/Settings');
 const TrackingData = require('../models/TrackingData');
@@ -18,7 +18,8 @@ const AiAdviceCache = require('../models/AiAdviceCache');
 const { recalcUserStats } = require('../utils/recalcStats');
 const logger = require('../utils/logger');
 const { sendVerificationEmail, resetTransporter, testSmtpConnection } = require('../utils/email');
-const { getJwtSecret, getAppConfig, invalidateCache, getEffectiveGoalMinutes } = require('../utils/settings');
+const { getAppConfig, invalidateCache, getEffectiveGoalMinutes } = require('../utils/settings');
+const { createSession } = require('./auth');
 const crypto = require('crypto');
 
 const router = express.Router();
@@ -435,6 +436,11 @@ router.post('/impersonate/end', authenticate, async (req, res) => {
     req.user.impersonatedBy = undefined;
     await req.user.save();
 
+    // Delete the impersonation session from DB
+    if (req.sessionDoc) {
+      await Session.deleteOne({ sessionId: req.sessionDoc.sessionId });
+    }
+
     await AuditLog.create({
       actorId: req.impersonator.userId, actorRole: req.impersonator.role,
       targetId: req.user.userId, action: 'impersonate_end',
@@ -446,7 +452,7 @@ router.post('/impersonate/end', authenticate, async (req, res) => {
       admin: req.impersonator.userId, target: req.user.username, action: 'end',
     });
 
-    // Clear the shadow JWT cookie so the admin's cookie (from login) takes effect again
+    // Clear the impersonation cookie so the admin's login cookie takes effect again
     res.clearCookie('sut_session', { path: '/' });
 
     res.json({ message: 'Impersonation ended' });
@@ -464,16 +470,15 @@ router.post('/impersonate/:userId', requireRole('super_admin'), async (req, res)
     if (!target) return res.status(404).json({ error: 'User not found' });
     if (target.role === 'super_admin') return res.status(403).json({ error: 'Cannot impersonate another super_admin' });
 
-    // Create Shadow JWT
-    const secret = await getJwtSecret();
-    const shadowToken = jwt.sign(
-      { userId: target.userId, role: target.role, imp: req.user.userId, impRole: req.user.role },
-      secret,
-      { expiresIn: '30m' }
-    );
-
     target.impersonatedBy = req.user.userId;
     await target.save();
+
+    // Create impersonation session (30-min, session cookie)
+    const shadowToken = await createSession(res, target, req, {
+      isImpersonation: true,
+      impersonatorUserId: req.user.userId,
+      impersonatorRole: req.user.role,
+    });
 
     await AuditLog.create({
       actorId: req.user.userId, actorRole: req.user.role,
@@ -491,15 +496,6 @@ router.post('/impersonate/:userId', requireRole('super_admin'), async (req, res)
       source: 'admin', userId: req.user.userId
     });
 
-    const { sessionSecure } = await getAppConfig();
-    res.cookie('sut_session', shadowToken, {
-      httpOnly: true,
-      secure: sessionSecure,
-      sameSite: 'lax',
-      maxAge: 30 * 60 * 1000,
-      path: '/',
-    });
-
     res.json({ token: shadowToken, user: {
       userId: target.userId, username: target.username, email: target.email,
       role: target.role, theme: target.theme, dailyGoalMinutes: target.dailyGoalMinutes,
@@ -507,6 +503,57 @@ router.post('/impersonate/:userId', requireRole('super_admin'), async (req, res)
     }});
   } catch (err) {
     res.status(500).json({ error: 'Impersonation failed' });
+  }
+});
+
+// ─── Session Management ───
+
+// Revoke all sessions (signs out everyone)
+router.post('/sessions/revoke-all', requireRole('super_admin'), async (req, res) => {
+  try {
+    const result = await Session.deleteMany({});
+    await AuditLog.create({
+      actorId: req.user.userId, actorRole: req.user.role,
+      targetId: 'all', action: 'revoke_all_sessions',
+      details: { deletedCount: result.deletedCount },
+      ip: req.ip,
+    });
+    logger.info(`All sessions revoked by ${req.user.username} (${result.deletedCount} sessions)`, {
+      source: 'admin', userId: req.user.userId,
+    });
+    res.json({ message: 'All sessions revoked', deletedCount: result.deletedCount });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to revoke sessions' });
+  }
+});
+
+// Revoke all sessions for a specific user
+router.post('/sessions/revoke/:userId', requireRole(...adminRoles), async (req, res) => {
+  try {
+    const targetUser = await User.findOne({ userId: req.params.userId });
+    if (!targetUser) return res.status(404).json({ error: 'User not found' });
+
+    const result = await Session.deleteMany({ userId: req.params.userId });
+    await AuditLog.create({
+      actorId: req.user.userId, actorRole: req.user.role,
+      targetId: req.params.userId, action: 'revoke_user_sessions',
+      details: { targetUsername: targetUser.username, deletedCount: result.deletedCount },
+      ip: req.ip,
+    });
+    logger.info(`Sessions revoked for ${targetUser.username} by ${req.user.username} (${result.deletedCount} sessions)`, {
+      source: 'admin', userId: req.user.userId,
+    });
+
+    // Disconnect any active sockets for this user
+    const io = req.app.get('io');
+    if (io) {
+      const sockets = await io.in(`user:${req.params.userId}`).fetchSockets();
+      sockets.forEach(s => s.disconnect(true));
+    }
+
+    res.json({ message: `Sessions revoked for ${targetUser.username}`, deletedCount: result.deletedCount });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to revoke user sessions' });
   }
 });
 

@@ -101,7 +101,6 @@ export default function SetupPage() {
       });
       if (data.token) {
         setToken(data.token);
-        localStorage.setItem('sut_user', JSON.stringify(data.user));
       }
       // Full reload to re-check setup status in App.jsx
       window.location.href = '/app';

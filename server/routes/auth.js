@@ -1,17 +1,17 @@
 const express = require('express');
 const argon2 = require('argon2');
-const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const QRCode = require('qrcode');
 const rateLimit = require('express-rate-limit');
 const User = require('../models/User');
+const Session = require('../models/Session');
 const AuditLog = require('../models/AuditLog');
 const { authenticate } = require('../middleware/auth');
 const { impersonationGuard, softBanCheck, lastActiveTouch } = require('../middleware/guards');
 const { sendVerificationEmail, send2faCode } = require('../utils/email');
 const totp = require('../utils/totp');
 const logger = require('../utils/logger');
-const { getJwtSecret, getJwtExpiresIn, getAppConfig, getSetting } = require('../utils/settings');
+const { getAppConfig, getSetting } = require('../utils/settings');
 
 const router = express.Router();
 
@@ -21,26 +21,55 @@ const authLimiter = rateLimit({
   message: { error: 'Too many attempts, please try again later' },
 });
 
-async function signToken(user) {
-  const secret = await getJwtSecret();
-  const expiresIn = await getJwtExpiresIn();
-  return jwt.sign(
-    { userId: user.userId, role: user.role },
-    secret,
-    { expiresIn }
-  );
-}
-
-async function setAuthCookie(res, token) {
+/**
+ * Create a database-backed session and set the httpOnly cookie.
+ * Returns the session token (for socket auth and backward compat).
+ */
+async function createSession(res, user, req, { isImpersonation = false, impersonatorUserId = null, impersonatorRole = null } = {}) {
+  const sessionId = Session.generateSessionId();
   const { sessionSecure } = await getAppConfig();
-  const maxAge = 7 * 24 * 60 * 60 * 1000; // 7 days
-  res.cookie('sut_session', token, {
+
+  let timeoutMs;
+  if (isImpersonation) {
+    // Impersonation sessions: 30 minutes, session cookie (no Max-Age persists past browser close)
+    timeoutMs = 30 * 60 * 1000;
+  } else {
+    const timeoutDays = Math.min(365, Math.max(1, Number(await getSetting('sessionTimeoutDays')) || 30));
+    timeoutMs = timeoutDays * 24 * 60 * 60 * 1000;
+  }
+
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + timeoutMs);
+
+  await Session.create({
+    sessionId,
+    userId: user.userId,
+    createdAt: now,
+    lastActiveAt: now,
+    expiresAt,
+    userAgent: req.headers['user-agent'] || '',
+    isImpersonation,
+    impersonatorUserId,
+    impersonatorRole,
+  });
+
+  const cookieOptions = {
     httpOnly: true,
     secure: sessionSecure,
     sameSite: 'lax',
-    maxAge,
     path: '/',
-  });
+  };
+
+  if (isImpersonation) {
+    // Session cookie — no maxAge means it dies when browser closes
+    // But also set a 30-min maxAge so it doesn't linger in open tabs
+    cookieOptions.maxAge = timeoutMs;
+  } else {
+    cookieOptions.maxAge = timeoutMs;
+  }
+
+  res.cookie('sut_session', sessionId, cookieOptions);
+  return sessionId;
 }
 
 // Register
@@ -106,9 +135,8 @@ router.post('/register', authLimiter, async (req, res) => {
       });
     }
 
-    // Super admin auto-verified, issue token immediately
-    const token = await signToken(user);
-    await setAuthCookie(res, token);
+    // Super admin auto-verified, issue session immediately
+    const token = await createSession(res, user, req);
     logger.info(`User registered (super_admin): ${username}`, { source: 'auth', userId: user.userId });
 
     const enforceDailyGoal = await getSetting('enforceDailyGoal');
@@ -248,8 +276,7 @@ router.post('/login', authLimiter, async (req, res) => {
       await user.save();
     }
 
-    const token = await signToken(user);
-    await setAuthCookie(res, token);
+    const token = await createSession(res, user, req);
     logger.info(`User logged in: ${user.username}`, { source: 'auth', userId: user.userId });
 
     const enforce2fa = await getSetting('enforce2fa');
@@ -360,7 +387,7 @@ router.post('/resend-verification', authLimiter, async (req, res) => {
   }
 });
 
-// Get current user
+// Get current user (also returns session token for socket auth on page reload)
 router.get('/me', authenticate, softBanCheck, lastActiveTouch, async (req, res) => {
   const u = req.user;
   const enforceDailyGoal = await getSetting('enforceDailyGoal');
@@ -369,6 +396,7 @@ router.get('/me', authenticate, softBanCheck, lastActiveTouch, async (req, res) 
   const masterGoal = enforceDailyGoal ? await getSetting('masterDailyGoalMinutes') : null;
   const has2fa = u.totpEnabled || u.email2faEnabled;
   res.json({
+    token: req.sessionDoc?.sessionId || null,
     user: {
       userId: u.userId,
       username: u.username,
@@ -399,8 +427,13 @@ router.get('/me', authenticate, softBanCheck, lastActiveTouch, async (req, res) 
   });
 });
 
-// Logout (clears HttpOnly cookie)
-router.post('/logout', (req, res) => {
+// Logout (deletes DB session + clears cookie)
+router.post('/logout', authenticate, async (req, res) => {
+  try {
+    if (req.sessionDoc) {
+      await Session.deleteOne({ sessionId: req.sessionDoc.sessionId });
+    }
+  } catch { /* best effort */ }
   res.clearCookie('sut_session', { path: '/' });
   res.json({ message: 'Logged out' });
 });
@@ -490,7 +523,7 @@ router.put('/username', authenticate, softBanCheck, impersonationGuard, async (r
       ip: req.ip,
     });
 
-    logger.info(`Username changed: ${oldUsername} → ${trimmed}`, {
+    logger.info(`Username changed: ${oldUsername} -> ${trimmed}`, {
       source: 'auth', userId: req.user.userId,
     });
 
@@ -665,3 +698,5 @@ router.post('/2fa/email/disable', authenticate, impersonationGuard, async (req, 
 });
 
 module.exports = router;
+// Export createSession for use by admin impersonation routes
+module.exports.createSession = createSession;

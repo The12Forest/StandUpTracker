@@ -1,6 +1,6 @@
 const Settings = require('../models/Settings');
-const jwt = require('jsonwebtoken');
-const { getJwtSecret } = require('../utils/settings');
+const Session = require('../models/Session');
+const User = require('../models/User');
 
 // Cache maintenance mode to avoid DB spam
 let maintenanceCache = { value: false, fetchedAt: 0 };
@@ -16,10 +16,9 @@ async function maintenanceGate(req, res, next) {
     maintenanceCache.fetchedAt = now;
   }
   if (maintenanceCache.value) {
-    // Allow super_admin through by verifying JWT directly (req.user not yet populated here)
+    // Allow super_admin through by looking up session (req.user not yet populated here)
     try {
       const header = req.headers.authorization;
-      // Manual cookie parsing (cookie-parser is not installed)
       let cookieToken = null;
       if (req.headers.cookie) {
         const match = req.headers.cookie.split(';').map(c => c.trim()).find(c => c.startsWith('sut_session='));
@@ -27,11 +26,13 @@ async function maintenanceGate(req, res, next) {
       }
       const token = (header?.startsWith('Bearer ') ? header.slice(7) : null) || cookieToken;
       if (token) {
-        const secret = await getJwtSecret();
-        const payload = jwt.verify(token, secret);
-        if (payload.role === 'super_admin') return next();
+        const session = await Session.findOne({ sessionId: token, expiresAt: { $gt: new Date() } });
+        if (session) {
+          const user = await User.findOne({ userId: session.userId, active: true }).select('role');
+          if (user?.role === 'super_admin') return next();
+        }
       }
-    } catch { /* invalid token — fall through to 503 */ }
+    } catch { /* invalid session — fall through to 503 */ }
     return res.status(503).json({ error: 'System under maintenance' });
   }
   next();

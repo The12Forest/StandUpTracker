@@ -15,10 +15,11 @@ const DEFAULTS = {
   appName: { value: 'StandUpTracker', description: 'Application display name', section: 'server' },
   maintenanceMode: { value: false, description: 'Enable maintenance mode', section: 'server' },
 
-  // Security / JWT
+  // Security / JWT / Sessions
   jwtSecret: { value: '', description: 'JWT signing secret (auto-generated on first launch if empty)', section: 'security' },
   jwtExpiresIn: { value: '7d', description: 'JWT token expiry duration (e.g. 7d, 24h)', section: 'security' },
   sessionSecure: { value: false, description: 'Use secure flag on session cookies (enable for HTTPS)', section: 'security' },
+  sessionTimeoutDays: { value: 30, description: 'How long a user stays logged in after their last login before being automatically signed out (1-365 days). Changing this value applies to all new sessions — existing sessions retain their original expiry.', section: 'security' },
 
   // Client / Interface Settings
   maxDailyMinutes: { value: 1440, description: 'Maximum trackable minutes per day', section: 'client' },

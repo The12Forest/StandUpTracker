@@ -1,10 +1,10 @@
-const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const Session = require('../models/Session');
 const Friendship = require('../models/Friendship');
 const Notification = require('../models/Notification');
 const TrackingData = require('../models/TrackingData');
 const logger = require('../utils/logger');
-const { getJwtSecret, getEffectiveGoalMinutes } = require('../utils/settings');
+const { getEffectiveGoalMinutes } = require('../utils/settings');
 const { syncFriendStreaks, syncGroupStreaks } = require('../utils/streaks');
 const { recalcUserStats } = require('../utils/recalcStats');
 const { sendPushNotification } = require('../utils/pushSender');
@@ -17,14 +17,18 @@ const counterState = {
 };
 
 function setupSocket(io) {
-  // Authenticate socket connections
+  // Authenticate socket connections via DB session lookup
   io.use(async (socket, next) => {
     try {
       const token = socket.handshake.auth?.token;
       if (!token) return next(new Error('Authentication required'));
 
-      const payload = jwt.verify(token, await getJwtSecret());
-      const user = await User.findOne({ userId: payload.userId, active: true });
+      const session = await Session.findOne({ sessionId: token });
+      if (!session || session.expiresAt < new Date()) {
+        return next(new Error('Session expired'));
+      }
+
+      const user = await User.findOne({ userId: session.userId, active: true });
       if (!user) return next(new Error('User not found'));
 
       socket.user = {
@@ -35,9 +39,12 @@ function setupSocket(io) {
       };
 
       // Track impersonation on socket
-      if (payload.imp) {
-        socket.user.impersonator = { userId: payload.imp, role: payload.impRole };
+      if (session.isImpersonation && session.impersonatorUserId) {
+        socket.user.impersonator = { userId: session.impersonatorUserId, role: session.impersonatorRole };
       }
+
+      // Store sessionId for later reference
+      socket.sessionId = token;
 
       next();
     } catch (err) {

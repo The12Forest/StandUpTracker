@@ -666,6 +666,15 @@ function UsersTab() {
                               <button onClick={() => setPasswordModal(u.userId)} className="text-[10px] px-1.5 py-0.5 rounded text-zen-500 hover:bg-zen-700/50 flex items-center gap-0.5" title="Set Password">
                                 <KeyRound size={11} /> Password
                               </button>
+                              <button onClick={async () => {
+                                if (!confirm(`Revoke all sessions for ${u.username}? They will be signed out immediately.`)) return;
+                                try {
+                                  const result = await api(`/api/admin/sessions/revoke/${u.userId}`, { method: 'POST' });
+                                  toast.success(result.message || 'Sessions revoked');
+                                } catch (err) { toast.error(err.message); }
+                              }} className="text-[10px] px-1.5 py-0.5 rounded text-warn-400 hover:bg-warn-500/10 flex items-center gap-0.5" title="Revoke all sessions for this user">
+                                <Lock size={11} /> Revoke Sessions
+                              </button>
                               <button onClick={() => handleDeleteUser(u.userId, u.username)} className="text-[10px] px-1.5 py-0.5 rounded text-danger-400 hover:bg-danger-500/10 flex items-center gap-0.5" title="Delete">
                                 <Trash2 size={11} /> Delete
                               </button>
@@ -832,6 +841,7 @@ function SettingsTab() {
     masterDailyGoalMinutes: 'The master daily time goal (in minutes) that applies to all users. When enforcement is off, this is the default for new users.',
     enforceDailyGoal: 'When enabled, ALL users are locked to the master daily goal and cannot change it in their settings.',
     enforce2fa: 'When enabled, ALL users must have two-factor authentication enabled. Users without 2FA will be forced to set it up on their next login.',
+    sessionTimeoutDays: 'How long a user stays logged in after their last login before being automatically signed out. Changing this value applies to all new sessions created after the change — existing sessions retain their original expiry. Range: 1–365 days. Default: 30 days.',
     forgottenCheckoutThresholdHours: 'If a user\'s timer runs longer than this many hours, they\'ll see a prominent alert on the Timer and Scheduler pages prompting them to correct the end time. Range: 1–24 hours. Default: 8 hours.',
     minActivityThresholdMinutes: 'Days where total standing time is below this value are excluded from statistics and heatmap activity. This does not affect streak calculations — use the daily goal setting for streak thresholds. Default: 1 minute.',
     vapidPublicKey: 'Public VAPID key for Web Push. Share this with the browser to establish push subscriptions. Generated automatically via the button above.',
@@ -868,6 +878,25 @@ function SettingsTab() {
                 {sectionInfo.description && <p className="text-[10px] text-zen-600">{sectionInfo.description}</p>}
               </div>
             </div>
+            {sectionKey === 'security' && (
+              <div className="bg-zen-800/40 rounded-lg p-3 space-y-2">
+                <p className="text-xs text-zen-400">Immediately sign out all users by revoking every active session. You will also be signed out.</p>
+                <button
+                  onClick={async () => {
+                    if (!confirm('This will immediately sign out all users including yourself. Continue?')) return;
+                    try {
+                      const result = await api('/api/admin/sessions/revoke-all', { method: 'POST' });
+                      useToastStore.getState().success(result.message || 'All sessions revoked');
+                      window.location.href = '/login';
+                    } catch (err) { useToastStore.getState().error(err.message); }
+                  }}
+                  className="btn-ghost text-xs text-danger-400 border border-danger-500/30 flex items-center gap-1"
+                >
+                  <Lock size={12} />
+                  Revoke All Active Sessions
+                </button>
+              </div>
+            )}
             {sectionKey === 'push' && (
               <div className="bg-zen-800/40 rounded-lg p-3 space-y-2">
                 <p className="text-xs text-warn-400">Regenerating VAPID keys will invalidate all existing push subscriptions. Users will need to re-enable push notifications.</p>

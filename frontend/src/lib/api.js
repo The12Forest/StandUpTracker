@@ -1,17 +1,21 @@
-const TOKEN_KEY = 'sut_token';
+/**
+ * API client — all authentication is handled via httpOnly cookie (sut_session).
+ * The session token is also stored in memory for socket.io auth only.
+ */
+
+let _sessionToken = null;
 
 export async function api(path, options = {}) {
-  const token = localStorage.getItem(TOKEN_KEY);
   const headers = { 'Content-Type': 'application/json', ...options.headers };
-  if (token) headers.Authorization = `Bearer ${token}`;
 
   const res = await fetch(path, { ...options, headers, credentials: 'include' });
   if (res.status === 401) {
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem('sut_originalToken');
-    localStorage.removeItem('sut_isImpersonating');
-    window.location.href = '/login';
-    throw new Error('Session expired');
+    _sessionToken = null;
+    const data = await res.json().catch(() => ({}));
+    // Redirect to login with session-expired message if applicable
+    const params = data.sessionExpired ? '?expired=true' : '';
+    window.location.href = `/login${params}`;
+    throw new Error(data.error || 'Session expired');
   }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
@@ -23,14 +27,17 @@ export async function api(path, options = {}) {
   return data;
 }
 
+/** Store session token in memory (for socket auth). NOT persisted to localStorage. */
 export function setToken(token) {
-  localStorage.setItem(TOKEN_KEY, token);
+  _sessionToken = token;
 }
 
+/** Get session token from memory (for socket auth only). */
 export function getToken() {
-  return localStorage.getItem(TOKEN_KEY);
+  return _sessionToken;
 }
 
+/** Clear in-memory session token. */
 export function clearToken() {
-  localStorage.removeItem(TOKEN_KEY);
+  _sessionToken = null;
 }

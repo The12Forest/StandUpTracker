@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { api, setToken, clearToken, getToken } from '../lib/api';
+import { api, setToken, clearToken } from '../lib/api';
 
 const useAuthStore = create((set, get) => ({
   user: null,
@@ -10,13 +10,14 @@ const useAuthStore = create((set, get) => ({
   isImpersonating: false,
 
   init: async () => {
-    const token = getToken();
-    if (!token) { set({ loading: false }); return; }
-    // Restore impersonation state from localStorage
-    const isImpersonating = localStorage.getItem('sut_isImpersonating') === 'true';
-    const originalToken = localStorage.getItem('sut_originalToken') || null;
+    // On page load, try to fetch current user using the httpOnly cookie.
+    // If the cookie is valid, the server returns user + session token (for socket).
     try {
       const data = await api('/api/auth/me');
+      if (data.token) setToken(data.token);
+      // Restore impersonation state from sessionStorage (survives tab reload, not tab close)
+      const isImpersonating = sessionStorage.getItem('sut_isImpersonating') === 'true';
+      const originalToken = sessionStorage.getItem('sut_originalToken') || null;
       set({ user: data.user, loading: false, isImpersonating, originalToken });
     } catch {
       clearToken();
@@ -35,6 +36,7 @@ const useAuthStore = create((set, get) => ({
     });
     if (data.requires2fa) return data;
     if (data.needsVerification) return data;
+    // Store session token in memory for socket auth
     setToken(data.token);
     set({ user: data.user });
     // Fetch full profile so all fields (stats, goal, enforcement) are populated after login
@@ -59,11 +61,11 @@ const useAuthStore = create((set, get) => ({
   },
 
   logout: async () => {
-    // Clear server-side HttpOnly cookie
+    // Clear server-side session + cookie
     try { await api('/api/auth/logout', { method: 'POST' }); } catch { /* ignore */ }
     clearToken();
-    localStorage.removeItem('sut_originalToken');
-    localStorage.removeItem('sut_isImpersonating');
+    sessionStorage.removeItem('sut_originalToken');
+    sessionStorage.removeItem('sut_isImpersonating');
     set({ user: null, originalToken: null, isImpersonating: false });
   },
 
@@ -85,16 +87,20 @@ const useAuthStore = create((set, get) => ({
   refreshUser: async () => {
     try {
       const data = await api('/api/auth/me');
+      if (data.token) setToken(data.token);
       set({ user: data.user });
     } catch { /* ignore */ }
   },
 
   // Impersonation
   startImpersonation: async (userId) => {
-    const currentToken = getToken();
     const data = await api(`/api/admin/impersonate/${userId}`, { method: 'POST' });
-    localStorage.setItem('sut_originalToken', currentToken);
-    localStorage.setItem('sut_isImpersonating', 'true');
+    // Save admin's session token to sessionStorage (survives page reload but not browser close)
+    const { getToken } = await import('../lib/api');
+    const currentToken = getToken();
+    sessionStorage.setItem('sut_originalToken', currentToken);
+    sessionStorage.setItem('sut_isImpersonating', 'true');
+    // Set the impersonation token as current
     setToken(data.token);
     set({ user: data.user, originalToken: currentToken, isImpersonating: true });
     // Fetch full profile for impersonated user (response only contains basic fields)
@@ -102,21 +108,20 @@ const useAuthStore = create((set, get) => ({
   },
 
   endImpersonation: async () => {
-    const orig = get().originalToken || localStorage.getItem('sut_originalToken');
+    const orig = get().originalToken || sessionStorage.getItem('sut_originalToken');
 
-    // Best-effort server-side cleanup using raw fetch to avoid 401 redirect
+    // Best-effort server-side cleanup — cookie will be cleared by server
     try {
-      const shadowToken = getToken();
       await fetch('/api/admin/impersonate/end', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${shadowToken}` },
+        headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
       });
     } catch { /* ignore */ }
 
-    // Always restore admin session
-    localStorage.removeItem('sut_originalToken');
-    localStorage.removeItem('sut_isImpersonating');
+    // Clear impersonation state
+    sessionStorage.removeItem('sut_originalToken');
+    sessionStorage.removeItem('sut_isImpersonating');
 
     if (orig) {
       setToken(orig);

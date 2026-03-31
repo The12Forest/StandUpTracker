@@ -16,6 +16,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [searchParams] = useSearchParams();
   const justVerified = searchParams.get('verified') === 'true';
+  const sessionExpired = searchParams.get('expired') === 'true';
 
   const authLogin = useAuthStore((s) => s.login);
   const toast = useToastStore();
@@ -96,6 +97,13 @@ export default function LoginPage() {
           </div>
           <h1 className="text-2xl font-bold text-zen-100">StandUpTracker</h1>
         </div>
+
+        {sessionExpired && (
+          <div className="mb-4 p-3 rounded-xl bg-warn-500/10 border border-warn-500/30 text-sm text-warn-400 flex items-center gap-2">
+            <Timer size={16} />
+            Your session has expired. Please log in again.
+          </div>
+        )}
 
         {justVerified && (
           <div className="mb-4 p-3 rounded-xl bg-accent-500/10 border border-accent-500/30 text-sm text-accent-400 flex items-center gap-2">

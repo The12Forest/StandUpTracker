@@ -10,6 +10,7 @@ const trackingDataSchema = new mongoose.Schema({
     duration: Number,
     forgottenCheckout: { type: Boolean, default: false },
   }],
+  goalMet: { type: Boolean, default: false },
   manualOverride: { type: Boolean, default: false },
   originalSeconds: { type: Number, default: null },
   // Report system fields

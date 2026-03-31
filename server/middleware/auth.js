@@ -1,7 +1,10 @@
-const jwt = require('jsonwebtoken');
 const User = require('../models/User');
-const { getJwtSecret } = require('../utils/settings');
+const Session = require('../models/Session');
 
+/**
+ * Extract session token from request.
+ * Priority: 1) Bearer header  2) sut_session cookie
+ */
 function getTokenFromRequest(req) {
   const header = req.headers.authorization;
   if (header && header.startsWith('Bearer ')) {
@@ -15,6 +18,11 @@ function getTokenFromRequest(req) {
   return null;
 }
 
+/**
+ * Authenticate via database session lookup.
+ * Reads session token from cookie/header, validates against Session collection,
+ * checks expiry, loads user, updates lastActiveAt (debounced 1 min).
+ */
 async function authenticate(req, res, next) {
   const token = getTokenFromRequest(req);
   if (!token) {
@@ -22,19 +30,42 @@ async function authenticate(req, res, next) {
   }
 
   try {
-    const secret = await getJwtSecret();
-    const payload = jwt.verify(token, secret);
-    const user = await User.findOne({ userId: payload.userId, active: true });
-    if (!user) return res.status(401).json({ error: 'User not found or deactivated' });
-    req.user = user;
+    const session = await Session.findOne({ sessionId: token });
+    if (!session) {
+      res.clearCookie('sut_session', { path: '/' });
+      return res.status(401).json({ error: 'Invalid or expired session', sessionExpired: true });
+    }
 
-    if (payload.imp) {
-      req.impersonator = { userId: payload.imp, role: payload.impRole };
+    if (session.expiresAt < new Date()) {
+      await Session.deleteOne({ sessionId: token });
+      res.clearCookie('sut_session', { path: '/' });
+      return res.status(401).json({ error: 'Your session has expired. Please log in again.', sessionExpired: true });
+    }
+
+    const user = await User.findOne({ userId: session.userId, active: true });
+    if (!user) {
+      await Session.deleteOne({ sessionId: token });
+      res.clearCookie('sut_session', { path: '/' });
+      return res.status(401).json({ error: 'User not found or deactivated' });
+    }
+
+    req.user = user;
+    req.sessionDoc = session;
+
+    // Populate impersonation info
+    if (session.isImpersonation && session.impersonatorUserId) {
+      req.impersonator = { userId: session.impersonatorUserId, role: session.impersonatorRole };
+    }
+
+    // Debounced lastActiveAt update (max once per minute to reduce DB writes)
+    const now = new Date();
+    if (now - session.lastActiveAt > 60_000) {
+      Session.updateOne({ sessionId: token }, { $set: { lastActiveAt: now } }).catch(() => {});
     }
 
     next();
   } catch (err) {
-    return res.status(401).json({ error: 'Invalid or expired token' });
+    return res.status(401).json({ error: 'Authentication failed' });
   }
 }
 
@@ -55,4 +86,4 @@ function requireVerified(req, res, next) {
   next();
 }
 
-module.exports = { authenticate, requireRole, requireVerified };
+module.exports = { authenticate, requireRole, requireVerified, getTokenFromRequest };

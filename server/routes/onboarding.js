@@ -1,10 +1,10 @@
 const express = require('express');
 const argon2 = require('argon2');
 const crypto = require('crypto');
-const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const Settings = require('../models/Settings');
-const { isSetupComplete, invalidateCache, getJwtSecret } = require('../utils/settings');
+const Session = require('../models/Session');
+const { isSetupComplete, invalidateCache, getSetting } = require('../utils/settings');
 const { testSmtpConnection } = require('../utils/email');
 const logger = require('../utils/logger');
 
@@ -88,20 +88,9 @@ router.post('/complete', async (req, res) => {
     // Invalidate settings cache
     invalidateCache();
 
-    // 4. Sign a JWT so the admin is immediately logged in
-    const token = jwt.sign(
-      { userId: user.userId, role: user.role },
-      jwtSecret,
-      { expiresIn: '7d' }
-    );
-
-    res.cookie('sut_session', token, {
-      httpOnly: true,
-      secure: !!sessionSecure,
-      sameSite: 'lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-      path: '/',
-    });
+    // 4. Create a DB session so the admin is immediately logged in
+    const { createSession } = require('./auth');
+    const token = await createSession(res, user, req);
 
     logger.info(`Onboarding completed by ${username}`, { source: 'setup', userId: user.userId });
 
