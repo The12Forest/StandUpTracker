@@ -75,7 +75,7 @@ const DEFAULTS = {
 
   // Activity Thresholds
   minActivityThresholdMinutes: { value: 1, description: 'Minimum standing time (minutes) for a day to count in statistics. Days below this are excluded from stats and heatmap. Does not affect streaks.', section: 'thresholds' },
-  forgottenCheckoutThresholdHours: { value: 8, description: 'Hours after which a running timer is considered a forgotten checkout (1-24)', section: 'thresholds' },
+  forgottenCheckoutThresholdHours: { value: 8, description: 'Hours after which a running timer is considered a forgotten checkout (1-24). Users with a timer running longer than this will see an alert on the Timer and Scheduler pages.', section: 'scheduler' },
 
   // Reporting
   reportThreshold: { value: 3, description: 'Number of confirmed reports against a single session before daily progress is cleared (min 1)', section: 'reporting' },

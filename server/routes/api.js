@@ -519,6 +519,14 @@ router.post('/timer/forgotten-checkout/finalize', requireVerified, async (req, r
       return res.status(400).json({ error: 'End time must be after start time' });
     }
 
+    // Corrected end time must be on the same calendar day as start (max 23:59:59)
+    const startDate = startedAt.toISOString().slice(0, 10);
+    const endDate = endTime.toISOString().slice(0, 10);
+    if (startDate !== endDate) {
+      await User.updateOne({ userId: req.user.userId }, { $set: { timerRunning: true, timerStartedAt: startedAt } });
+      return res.status(400).json({ error: 'Corrected end time must be on the same day as the start time' });
+    }
+
     const sessionMs = endTime.getTime() - startedAt.getTime();
     const sessionSeconds = Math.min(Math.max(Math.round(sessionMs / 1000), 0), 86400);
 

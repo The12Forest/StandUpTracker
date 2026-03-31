@@ -5,6 +5,8 @@ import { BentoCard } from '../components/BentoCard';
 import useAuthStore from '../stores/useAuthStore';
 import useSocketStore from '../stores/useSocketStore';
 import useToastStore from '../stores/useToastStore';
+import useForgottenCheckout from '../hooks/useForgottenCheckout';
+import ForgottenCheckoutModal from '../components/ForgottenCheckoutModal';
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 const MEMBER_COLORS = [
@@ -182,12 +184,14 @@ function PersonalCalendar({ weekDays, data, offDays, onToggleOffDay, today }) {
           <div className="p-2 text-[10px] text-zen-600 text-right pr-2">Off</div>
           {weekDays.map(dateStr => {
             const isOff = offDays[dateStr];
+            const isPast = dateStr < today;
             return (
               <div key={dateStr} className="p-2 flex justify-center border-l border-zen-700/20">
                 <button
-                  onClick={() => onToggleOffDay(dateStr)}
-                  className={`w-7 h-3.5 rounded-full transition-colors relative ${isOff ? 'bg-zen-500' : 'bg-zen-700'}`}
-                  title={isOff ? 'Remove off day' : 'Mark as off day'}
+                  onClick={() => !isPast && onToggleOffDay(dateStr)}
+                  disabled={isPast}
+                  className={`w-7 h-3.5 rounded-full transition-colors relative ${isOff ? 'bg-zen-500' : 'bg-zen-700'} ${isPast ? 'opacity-30 cursor-not-allowed' : ''}`}
+                  title={isPast ? 'Cannot modify past dates' : isOff ? 'Remove off day' : 'Mark as off day'}
                 >
                   <div className={`w-2.5 h-2.5 bg-white rounded-full absolute top-0.5 transition-all ${isOff ? 'left-4' : 'left-0.5'}`} />
                 </button>
@@ -201,6 +205,14 @@ function PersonalCalendar({ weekDays, data, offDays, onToggleOffDay, today }) {
 }
 
 // Group calendar view
+function getOffDayMembers(members, memberIds, dateStr) {
+  const names = [];
+  for (const uid of memberIds) {
+    if (members[uid]?.offDays?.[dateStr]) names.push(members[uid].username);
+  }
+  return names;
+}
+
 function GroupCalendar({ weekDays, members, selectedMembers, today }) {
   const memberIds = Object.keys(members).filter(id => selectedMembers.has(id));
   const colorMap = {};
@@ -242,6 +254,7 @@ function GroupCalendar({ weekDays, members, selectedMembers, today }) {
 
           {weekDays.map(dateStr => {
             const isToday = dateStr === today;
+            const offMembers = getOffDayMembers(members, memberIds, dateStr);
             // Collect all sessions from selected members
             const allSessions = [];
             for (const uid of memberIds) {
@@ -254,7 +267,7 @@ function GroupCalendar({ weekDays, members, selectedMembers, today }) {
             }
 
             return (
-              <div key={dateStr} className={`relative border-l border-zen-700/20 ${isToday ? 'bg-accent-500/5' : ''}`}>
+              <div key={dateStr} className={`relative border-l border-zen-700/20 ${isToday ? 'bg-accent-500/5' : ''} ${offMembers.length > 0 ? 'bg-zen-800/20' : ''}`}>
                 {HOURS.map(h => (
                   <div key={h} className="absolute w-full border-t border-zen-700/10" style={{ top: `${(h / 24) * 100}%` }} />
                 ))}
@@ -292,6 +305,17 @@ function GroupCalendar({ weekDays, members, selectedMembers, today }) {
                     </div>
                   );
                 })}
+
+                {/* Off-day indicators for group members */}
+                {offMembers.length > 0 && (
+                  <div className="absolute bottom-1 left-0 right-0 flex flex-col items-center gap-0.5 pointer-events-none">
+                    {offMembers.map(name => (
+                      <span key={name} className="text-[8px] text-zen-500 bg-zen-800/80 px-1.5 py-0.5 rounded truncate max-w-full flex items-center gap-0.5">
+                        <Coffee size={8} className="shrink-0" /> {name}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -305,6 +329,8 @@ export default function SchedulerPage() {
   const user = useAuthStore((s) => s.user);
   const socket = useSocketStore((s) => s.socket);
   const toast = useToastStore();
+  const { forgotten, check: checkForgotten, finalize, discard } = useForgottenCheckout();
+  const [showForgottenModal, setShowForgottenModal] = useState(false);
   const today = new Date().toISOString().slice(0, 10);
 
   // Week state
@@ -380,13 +406,19 @@ export default function SchedulerPage() {
     const onFriendStats = () => {
       if (view === 'group') fetchGroupData();
     };
+    const onOffDayUpdate = () => {
+      fetchPersonal();
+      if (view === 'group') fetchGroupData();
+    };
     socket.on('STATS_UPDATE', onStatsUpdate);
     socket.on('FRIEND_STATS_UPDATE', onFriendStats);
     socket.on('LEADERBOARD_UPDATE', onStatsUpdate);
+    socket.on('OFFDAY_UPDATE', onOffDayUpdate);
     return () => {
       socket.off('STATS_UPDATE', onStatsUpdate);
       socket.off('FRIEND_STATS_UPDATE', onFriendStats);
       socket.off('LEADERBOARD_UPDATE', onStatsUpdate);
+      socket.off('OFFDAY_UPDATE', onOffDayUpdate);
     };
   }, [socket, view, fetchPersonal, fetchGroupData]);
 
@@ -438,6 +470,29 @@ export default function SchedulerPage() {
 
   return (
     <div className="space-y-4 animate-fade-in">
+      {/* Forgotten checkout banner */}
+      {forgotten && (
+        <div
+          className="flex items-center gap-3 px-4 py-3 rounded-xl bg-warn-500/10 border border-warn-500/30 cursor-pointer hover:bg-warn-500/15 transition-colors"
+          onClick={() => setShowForgottenModal(true)}
+        >
+          <AlertTriangle size={18} className="text-warn-400 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm text-zen-200 font-medium">Forgotten checkout detected</p>
+            <p className="text-xs text-zen-400">Your timer has been running for over {forgotten.thresholdHours}h. Click to resolve.</p>
+          </div>
+          <span className="text-xs text-warn-400 font-medium shrink-0">Resolve</span>
+        </div>
+      )}
+      {showForgottenModal && forgotten && (
+        <ForgottenCheckoutModal
+          forgotten={forgotten}
+          onFinalize={finalize}
+          onDiscard={discard}
+          onClose={() => { setShowForgottenModal(false); checkForgotten(); fetchPersonal(); }}
+        />
+      )}
+
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">

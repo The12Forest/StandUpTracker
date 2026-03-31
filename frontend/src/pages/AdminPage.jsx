@@ -748,6 +748,7 @@ const SECTION_LABELS = {
   emailAdmin: { label: 'Email Administration', icon: Mail, description: 'Force re-verification and email admin actions' },
   ai: { label: 'AI / Ollama', icon: Brain, description: 'Configure the Ollama AI endpoint, model, and feature toggle' },
   push: { label: 'Push Notifications', icon: Wifi, description: 'VAPID keys for Web Push notifications' },
+  scheduler: { label: 'Scheduler', icon: Calendar, description: 'Forgotten checkout detection and scheduler display settings' },
   thresholds: { label: 'Activity Thresholds', icon: Activity, description: 'Minimum activity requirements for statistics inclusion' },
   reporting: { label: 'Reporting', icon: Flame, description: 'Timer abuse reporting: threshold, cooldown, and self-report settings' },
   logging: { label: 'Logging', icon: ScrollText, description: 'Log levels and retention policies' },
@@ -831,6 +832,7 @@ function SettingsTab() {
     masterDailyGoalMinutes: 'The master daily time goal (in minutes) that applies to all users. When enforcement is off, this is the default for new users.',
     enforceDailyGoal: 'When enabled, ALL users are locked to the master daily goal and cannot change it in their settings.',
     enforce2fa: 'When enabled, ALL users must have two-factor authentication enabled. Users without 2FA will be forced to set it up on their next login.',
+    forgottenCheckoutThresholdHours: 'If a user\'s timer runs longer than this many hours, they\'ll see a prominent alert on the Timer and Scheduler pages prompting them to correct the end time. Range: 1–24 hours. Default: 8 hours.',
     minActivityThresholdMinutes: 'Days where total standing time is below this value are excluded from statistics and heatmap activity. This does not affect streak calculations — use the daily goal setting for streak thresholds. Default: 1 minute.',
     vapidPublicKey: 'Public VAPID key for Web Push. Share this with the browser to establish push subscriptions. Generated automatically via the button above.',
     vapidPrivateKey: 'Private VAPID key used server-side to sign push messages. Keep this secret.',
@@ -847,7 +849,7 @@ function SettingsTab() {
   }
 
   const SUPER_ADMIN_SECTIONS = new Set(['mail', 'security']);
-  const sectionOrder = ['enforcement', 'thresholds', 'reporting', 'push', 'server', 'security', 'client', 'mail', 'auth', 'social', 'groups', 'emailAdmin', 'ai', 'logging', 'general']
+  const sectionOrder = ['enforcement', 'scheduler', 'thresholds', 'reporting', 'push', 'server', 'security', 'client', 'mail', 'auth', 'social', 'groups', 'emailAdmin', 'ai', 'logging', 'general']
     .filter(s => !SUPER_ADMIN_SECTIONS.has(s) || isSuperAdmin);
 
   return (

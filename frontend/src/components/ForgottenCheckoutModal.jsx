@@ -21,18 +21,19 @@ export default function ForgottenCheckoutModal({ forgotten, onFinalize, onDiscar
   const toast = useToastStore();
   const [saving, setSaving] = useState(false);
 
-  // Compute a sensible default end time: startedAt + thresholdHours or now, whichever is earlier
+  // Compute a sensible default end time: startedAt + thresholdHours or end of start day, whichever is earlier
   const startedAt = forgotten.startedAt;
   const thresholdMs = (forgotten.thresholdHours || 8) * 3600000;
-  const defaultEnd = new Date(Math.min(startedAt + thresholdMs, Date.now()));
+  const startDay = new Date(startedAt).toISOString().slice(0, 10); // YYYY-MM-DD of start
+  const endOfStartDay = new Date(startDay + 'T23:59:00').getTime();
+  const defaultEnd = new Date(Math.min(startedAt + thresholdMs, endOfStartDay, Date.now()));
 
-  // Use date + time inputs for the corrected end
-  const [endDate, setEndDate] = useState(defaultEnd.toISOString().slice(0, 10));
+  // End time is locked to the same calendar day as start — only time is editable
   const [endTime, setEndTime] = useState(
     `${String(defaultEnd.getHours()).padStart(2, '0')}:${String(defaultEnd.getMinutes()).padStart(2, '0')}`
   );
 
-  const correctedEnd = new Date(`${endDate}T${endTime}:00`);
+  const correctedEnd = new Date(`${startDay}T${endTime}:00`);
   const isValid = !isNaN(correctedEnd.getTime()) && correctedEnd.getTime() > startedAt && correctedEnd.getTime() <= Date.now();
   const sessionDuration = isValid ? correctedEnd.getTime() - startedAt : 0;
 
@@ -93,12 +94,9 @@ export default function ForgottenCheckoutModal({ forgotten, onFinalize, onDiscar
             <div>
               <label className="text-xs text-zen-500 block mb-1">When did you actually stop?</label>
               <div className="flex gap-2">
-                <input
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  className="glass-input text-sm flex-1"
-                />
+                <div className="glass-input text-sm flex-1 opacity-60 cursor-not-allowed" title="End time must be on the same day as start">
+                  {startDay}
+                </div>
                 <input
                   type="time"
                   value={endTime}
@@ -106,6 +104,7 @@ export default function ForgottenCheckoutModal({ forgotten, onFinalize, onDiscar
                   className="glass-input text-sm w-28"
                 />
               </div>
+              <p className="text-[10px] text-zen-600 mt-1">End time is restricted to the same day as the start.</p>
             </div>
 
             {isValid && (
@@ -115,7 +114,7 @@ export default function ForgottenCheckoutModal({ forgotten, onFinalize, onDiscar
               </div>
             )}
 
-            {!isValid && endDate && endTime && (
+            {!isValid && endTime && (
               <p className="text-xs text-danger-400">End time must be after start time and not in the future.</p>
             )}
           </div>

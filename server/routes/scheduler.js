@@ -54,7 +54,7 @@ router.get('/sessions', requireVerified, async (req, res) => {
   }
 });
 
-// Create off day (user self-service)
+// Create off day (user self-service — current or future dates only)
 router.post('/off-days', requireVerified, async (req, res) => {
   try {
     const { date } = req.body;
@@ -62,11 +62,23 @@ router.post('/off-days', requireVerified, async (req, res) => {
       return res.status(400).json({ error: 'Valid date (YYYY-MM-DD) required' });
     }
 
+    const today = new Date().toISOString().slice(0, 10);
+    if (date < today) {
+      return res.status(400).json({ error: 'Cannot mark past dates as off days' });
+    }
+
     await OffDay.findOneAndUpdate(
       { userId: req.user.userId, date },
       { userId: req.user.userId, date },
       { upsert: true }
     );
+
+    // Emit real-time off-day update to group members
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`user:${req.user.userId}`).emit('OFFDAY_UPDATE', { userId: req.user.userId, date, action: 'add' });
+      io.to(`friends:${req.user.userId}`).emit('OFFDAY_UPDATE', { userId: req.user.userId, date, action: 'add' });
+    }
 
     res.json({ message: 'Off day marked' });
   } catch (err) {
@@ -83,6 +95,14 @@ router.delete('/off-days/:date', requireVerified, async (req, res) => {
     }
 
     await OffDay.deleteOne({ userId: req.user.userId, date });
+
+    // Emit real-time off-day update
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`user:${req.user.userId}`).emit('OFFDAY_UPDATE', { userId: req.user.userId, date, action: 'remove' });
+      io.to(`friends:${req.user.userId}`).emit('OFFDAY_UPDATE', { userId: req.user.userId, date, action: 'remove' });
+    }
+
     res.json({ message: 'Off day removed' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to remove off day' });
