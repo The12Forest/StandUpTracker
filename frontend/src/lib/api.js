@@ -12,9 +12,13 @@ export async function api(path, options = {}) {
   if (res.status === 401) {
     _sessionToken = null;
     const data = await res.json().catch(() => ({}));
-    // Redirect to login with session-expired message if applicable
-    const params = data.sessionExpired ? '?expired=true' : '';
-    window.location.href = `/login${params}`;
+    // Don't redirect if already on login/register/setup pages or if this is the /me check
+    const onPublicPage = ['/login', '/register', '/setup'].some(p => window.location.pathname.startsWith(p));
+    const isAuthCheck = path === '/api/auth/me';
+    if (!onPublicPage && !isAuthCheck) {
+      const params = data.sessionExpired ? '?expired=true' : '';
+      window.location.href = `/login${params}`;
+    }
     throw new Error(data.error || 'Session expired');
   }
   const data = await res.json().catch(() => ({}));
