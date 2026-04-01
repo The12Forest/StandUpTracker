@@ -16,6 +16,7 @@ const OffDay = require('../models/OffDay');
 const FriendStreak = require('../models/FriendStreak');
 const AiAdviceCache = require('../models/AiAdviceCache');
 const { recalcUserStats } = require('../utils/recalcStats');
+const { checkAndSetGoalMet } = require('../utils/streaks');
 const logger = require('../utils/logger');
 const { sendVerificationEmail, resetTransporter, testSmtpConnection } = require('../utils/email');
 const { getAppConfig, invalidateCache, getEffectiveGoalMinutes } = require('../utils/settings');
@@ -590,6 +591,9 @@ router.put('/tracking/:userId/:date', requireRole(...adminRoles), async (req, re
     );
 
     await recalcUserStats(req.params.userId);
+    // Re-evaluate goal_met and personal streak for the edited date
+    const io = req.app.get('io');
+    await checkAndSetGoalMet(req.params.userId, req.params.date, io);
 
     await AuditLog.create({
       actorId: req.impersonator?.userId || req.user.userId,
@@ -612,6 +616,9 @@ router.delete('/tracking/:userId/:date', requireRole(...adminRoles), async (req,
 
     await before.deleteOne();
     await recalcUserStats(req.params.userId);
+    // Re-evaluate goal_met and personal streak (record deleted)
+    const io = req.app.get('io');
+    await checkAndSetGoalMet(req.params.userId, req.params.date, io);
 
     await AuditLog.create({
       actorId: req.impersonator?.userId || req.user.userId,
@@ -641,6 +648,9 @@ router.delete('/tracking/:userId/:date/override', requireRole(...adminRoles), as
     await record.save();
 
     await recalcUserStats(req.params.userId);
+    // Re-evaluate goal_met and personal streak after override reset
+    const io = req.app.get('io');
+    await checkAndSetGoalMet(req.params.userId, req.params.date, io);
 
     await AuditLog.create({
       actorId: req.impersonator?.userId || req.user.userId,
@@ -1265,6 +1275,9 @@ router.put('/users/:userId/daily-goal/:date', requireRole(...adminRoles), async 
 
     // Recalc user stats since goal override may affect streaks
     await recalcUserStats(req.params.userId);
+    // Re-evaluate goal_met with new goal value
+    const io = req.app.get('io');
+    await checkAndSetGoalMet(req.params.userId, req.params.date, io);
 
     await AuditLog.create({
       actorId: req.impersonator?.userId || req.user.userId,
@@ -1295,6 +1308,9 @@ router.delete('/users/:userId/daily-goal/:date', requireRole(...adminRoles), asy
 
     // Recalc user stats since removing override may affect streaks
     await recalcUserStats(req.params.userId);
+    // Re-evaluate goal_met now that override is removed
+    const io = req.app.get('io');
+    await checkAndSetGoalMet(req.params.userId, req.params.date, io);
 
     await AuditLog.create({
       actorId: req.impersonator?.userId || req.user.userId,
@@ -1325,6 +1341,9 @@ router.put('/users/:userId/off-day/:date', requireRole(...adminRoles), async (re
 
     // Recalc stats since off day affects streaks
     await recalcUserStats(req.params.userId);
+    // Re-evaluate goal_met (off days clear goalMet flag) and personal streak
+    const io = req.app.get('io');
+    await checkAndSetGoalMet(req.params.userId, req.params.date, io);
 
     await AuditLog.create({
       actorId: req.impersonator?.userId || req.user.userId,
@@ -1353,6 +1372,9 @@ router.delete('/users/:userId/off-day/:date', requireRole(...adminRoles), async 
     if (!deleted) return res.status(404).json({ error: 'No off day found for this date' });
 
     await recalcUserStats(req.params.userId);
+    // Re-evaluate goal_met now that off day is removed
+    const io = req.app.get('io');
+    await checkAndSetGoalMet(req.params.userId, req.params.date, io);
 
     await AuditLog.create({
       actorId: req.impersonator?.userId || req.user.userId,
@@ -1391,6 +1413,9 @@ router.post('/users/:userId/restore-report/:date', requireRole(...adminRoles), a
     await tracking.save();
 
     await recalcUserStats(req.params.userId);
+    // Re-evaluate goal_met after restoring time
+    const io = req.app.get('io');
+    await checkAndSetGoalMet(req.params.userId, req.params.date, io);
 
     await AuditLog.create({
       actorId: req.user.userId, actorRole: req.user.role,

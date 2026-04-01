@@ -5,7 +5,7 @@ const Notification = require('../models/Notification');
 const TrackingData = require('../models/TrackingData');
 const logger = require('../utils/logger');
 const { getEffectiveGoalMinutes } = require('../utils/settings');
-const { syncFriendStreaks, syncGroupStreaks } = require('../utils/streaks');
+const { checkAndSetGoalMet } = require('../utils/streaks');
 const { recalcUserStats } = require('../utils/recalcStats');
 const { sendPushNotification } = require('../utils/pushSender');
 
@@ -245,9 +245,8 @@ function setupSocket(io) {
             }).catch(() => {});
           }
 
-          // Fire-and-forget: sync friend & group streaks
-          syncFriendStreaks(userId).catch(() => {});
-          syncGroupStreaks(userId).catch(() => {});
+          // Trigger A: evaluate goal_met flag and update personal streak
+          checkAndSetGoalMet(userId, date, io).catch(() => {});
 
           // Notify leaderboard viewers
           io.to('authenticated').emit('LEADERBOARD_UPDATE');

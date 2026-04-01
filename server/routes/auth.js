@@ -393,6 +393,7 @@ router.get('/me', authenticate, softBanCheck, lastActiveTouch, async (req, res) 
   const enforceDailyGoal = await getSetting('enforceDailyGoal');
   const enforce2fa = await getSetting('enforce2fa');
   const allowUsernameChanges = await getSetting('allowUsernameChanges');
+  const firstDayOfWeek = await getSetting('firstDayOfWeek') || 'monday';
   const masterGoal = enforceDailyGoal ? await getSetting('masterDailyGoalMinutes') : null;
   const has2fa = u.totpEnabled || u.email2faEnabled;
   res.json({
@@ -423,6 +424,7 @@ router.get('/me', authenticate, softBanCheck, lastActiveTouch, async (req, res) 
       enforce2fa: !!enforce2fa,
       needs2faSetup: !!enforce2fa && !has2fa,
       canChangeUsername: !!allowUsernameChanges && u.canChangeUsername !== false,
+      firstDayOfWeek,
     },
   });
 });

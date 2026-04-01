@@ -69,6 +69,30 @@ const useSocketStore = create((set, get) => ({
       useNotificationStore.getState().setUnreadCount(data.count);
     });
 
+    // Real-time personal streak update (from Trigger A goal-met or midnight rollover)
+    socket.on('STREAK_UPDATE', (data) => {
+      const currentUser = useAuthStore.getState().user;
+      if (currentUser) {
+        useAuthStore.setState({
+          user: {
+            ...currentUser,
+            currentStreak: data.currentStreak ?? currentUser.currentStreak,
+            bestStreak: data.bestStreak ?? currentUser.bestStreak,
+          },
+        });
+      }
+    });
+
+    // Friend streak update (from midnight rollover)
+    socket.on('FRIEND_STREAK_UPDATE', () => {
+      // Trigger a refetch on pages that display friend streaks
+    });
+
+    // Group streak update (from midnight rollover)
+    socket.on('GROUP_STREAK_UPDATE', () => {
+      // Trigger a refetch on pages that display group streaks
+    });
+
     // Admin changed enforcement settings — refresh user profile
     socket.on('SETTINGS_CHANGED', () => {
       useAuthStore.getState().refreshUser();

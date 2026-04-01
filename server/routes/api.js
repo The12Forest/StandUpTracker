@@ -5,7 +5,7 @@ const TrackingData = require('../models/TrackingData');
 const Notification = require('../models/Notification');
 const User = require('../models/User');
 const OffDay = require('../models/OffDay');
-const { syncFriendStreaks, syncGroupStreaks } = require('../utils/streaks');
+const { checkAndSetGoalMet } = require('../utils/streaks');
 const { getEffectiveGoalMinutes, getSetting, getMinActivityThresholdSeconds } = require('../utils/settings');
 const { recalcUserStats } = require('../utils/recalcStats');
 const { sendPushNotification } = require('../utils/pushSender');
@@ -137,9 +137,9 @@ router.post('/timer/stop', requireVerified, currentDayGuard, async (req, res) =>
       }
     }
 
-    // Fire-and-forget: sync friend & group streaks
-    syncFriendStreaks(req.user.userId).catch(() => {});
-    syncGroupStreaks(req.user.userId).catch(() => {});
+    // Trigger A: evaluate goal_met flag and update personal streak
+    const io2 = req.app.get('io');
+    checkAndSetGoalMet(req.user.userId, date, io2).catch(() => {});
   }
 
   // Broadcast timer stop to all user devices
@@ -182,11 +182,11 @@ router.post('/tracking', requireVerified, currentDayGuard, async (req, res) => {
     // Single source of truth: recalculate all stats
     await recalcUserStats(req.user.userId);
 
-    res.json({ success: true, record });
+    // Trigger A: evaluate goal_met flag and update personal streak
+    const io = req.app.get('io');
+    checkAndSetGoalMet(req.user.userId, date, io).catch(() => {});
 
-    // Fire-and-forget: sync friend & group streaks
-    syncFriendStreaks(req.user.userId).catch(() => {});
-    syncGroupStreaks(req.user.userId).catch(() => {});
+    res.json({ success: true, record });
   } catch (err) {
     res.status(500).json({ error: 'Failed to save tracking data' });
   }
@@ -549,8 +549,10 @@ router.post('/timer/forgotten-checkout/finalize', requireVerified, async (req, r
       );
 
       await recalcUserStats(req.user.userId);
-      syncFriendStreaks(req.user.userId).catch(() => {});
-      syncGroupStreaks(req.user.userId).catch(() => {});
+
+      // Trigger A: evaluate goal_met flag and update personal streak
+      const ioRef = req.app.get('io');
+      checkAndSetGoalMet(req.user.userId, date, ioRef).catch(() => {});
 
       // Audit log
       await AuditLog.create({

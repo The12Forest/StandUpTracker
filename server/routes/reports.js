@@ -8,6 +8,7 @@ const Notification = require('../models/Notification');
 const AuditLog = require('../models/AuditLog');
 const { getSetting } = require('../utils/settings');
 const { recalcUserStats } = require('../utils/recalcStats');
+const { checkAndSetGoalMet } = require('../utils/streaks');
 const { sendPushNotification } = require('../utils/pushSender');
 const logger = require('../utils/logger');
 
@@ -104,6 +105,8 @@ router.post('/', async (req, res) => {
 
         // Recalc stats
         await recalcUserStats(targetUserId);
+        // Re-evaluate goal_met (seconds zeroed out)
+        await checkAndSetGoalMet(targetUserId, today, io);
 
         // Emit stats update
         const updatedUser = await User.findOne({ userId: targetUserId });

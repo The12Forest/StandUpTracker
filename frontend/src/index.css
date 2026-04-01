@@ -45,10 +45,16 @@ body {
 .bento-card {
   @apply bg-zen-900/80 backdrop-blur-xl border border-zen-700/40 rounded-2xl p-6;
   transition: border-color 0.3s ease, box-shadow 0.3s ease;
+  position: relative;
 }
 .bento-card:hover {
   @apply border-accent-500/30;
   box-shadow: 0 0 30px var(--color-accent-glow);
+}
+.bento-card button,
+.bento-card a {
+  position: relative;
+  z-index: 1;
 }
 
 /* ── Accent Pulse ── */

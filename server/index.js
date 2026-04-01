@@ -20,7 +20,7 @@ const reportRoutes = require('./routes/reports');
 const schedulerRoutes = require('./routes/scheduler');
 const { maintenanceGate } = require('./middleware/guards');
 const { setupSocket } = require('./socket/handler');
-const { dailyStreakCleanup } = require('./utils/streaks');
+const { startupStreakIntegrityCheck, scheduleMidnightJob } = require('./utils/streaks');
 const { runNotificationScheduler } = require('./utils/notifications');
 const { isSetupComplete, getSetting } = require('./utils/settings');
 const Session = require('./models/Session');
@@ -151,14 +151,19 @@ async function start() {
   }
   logger.info('MongoDB connected');
 
-  // Daily streak cleanup — runs every hour, checks for broken streaks
   // Set CORS origin from DB settings (appUrl)
   try {
     const appUrlSetting = await getSetting('appUrl');
     if (appUrlSetting) app.set('corsOrigin', appUrlSetting);
   } catch { /* use wildcard fallback */ }
 
-  setInterval(() => { dailyStreakCleanup().catch(() => {}); }, 60 * 60 * 1000);
+  // Startup streak integrity check — backfills goalMet, corrects inconsistent streaks
+  startupStreakIntegrityCheck(io).catch(err => {
+    logger.error(`Startup streak integrity check failed: ${err.message}`, { source: 'startup' });
+  });
+
+  // Midnight streak rollover job — breaks streaks for missed goals, increments friend/group streaks
+  scheduleMidnightJob(io);
 
   // Notification scheduler — runs every hour
   setInterval(() => { runNotificationScheduler(io).catch(() => {}); }, 60 * 60 * 1000);

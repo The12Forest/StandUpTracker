@@ -334,9 +334,14 @@ export default function SchedulerPage() {
   const today = new Date().toISOString().slice(0, 10);
 
   // Week state
-  const firstDayOfWeek = user?.firstDayOfWeek || 'monday';
+  const firstDayOfWeek = user?.firstDayOfWeek ?? 'monday';
   const [weekStart, setWeekStart] = useState(() => getWeekStart(new Date(), firstDayOfWeek));
   const weekDays = useMemo(() => getWeekDays(weekStart), [weekStart]);
+
+  // Re-align week start when the admin changes the firstDayOfWeek setting
+  useEffect(() => {
+    setWeekStart(getWeekStart(new Date(weekStart + 'T00:00:00'), firstDayOfWeek));
+  }, [firstDayOfWeek]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // View mode
   const [view, setView] = useState('personal'); // 'personal' | 'group'

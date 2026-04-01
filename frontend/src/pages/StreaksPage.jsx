@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Flame, Users, User, Check, Clock, Trophy, TrendingUp } from 'lucide-react';
 import { api } from '../lib/api';
 import { BentoCard, BentoGrid } from '../components/BentoCard';
 import useAuthStore from '../stores/useAuthStore';
 import useTimerStore from '../stores/useTimerStore';
+import useSocketStore from '../stores/useSocketStore';
 
 export default function StreaksPage() {
   const [friendStreaks, setFriendStreaks] = useState([]);
@@ -16,7 +17,7 @@ export default function StreaksPage() {
   const elapsed = useTimerStore((s) => s.elapsed);
   const todayMinutes = Math.round((todayTotal + elapsed) / 60);
 
-  useEffect(() => {
+  const loadStreaks = useCallback(() => {
     Promise.all([
       api('/api/social/streaks').catch(() => ({ streaks: [] })),
       api('/api/groups').catch(() => ({ groups: [] })),
@@ -28,6 +29,17 @@ export default function StreaksPage() {
       setLoading(false);
     });
   }, []);
+
+  useEffect(() => { loadStreaks(); }, [loadStreaks]);
+
+  // Live-refresh when friend/group streaks change via socket
+  useEffect(() => {
+    const { on, off } = useSocketStore.getState();
+    const handler = () => loadStreaks();
+    on('FRIEND_STREAK_UPDATE', handler);
+    on('GROUP_STREAK_UPDATE', handler);
+    return () => { off('FRIEND_STREAK_UPDATE', handler); off('GROUP_STREAK_UPDATE', handler); };
+  }, [loadStreaks]);
 
   if (loading) return <div className="text-zen-500">Loading streaks...</div>;
 

@@ -5,11 +5,14 @@ const User = require('../models/User');
 const { getEffectiveGoalMinutes } = require('./settings');
 
 /**
- * Recalculate a user's aggregate stats (totalSeconds, totalDays, streaks, level)
+ * Recalculate a user's aggregate stats (totalSeconds, totalDays, level)
  * from TrackingData, respecting per-day goal overrides and off days.
- * Off days are skipped in streak calculations (streak pauses, doesn't break).
+ *
+ * NOTE: Streaks are NO LONGER calculated here. They are maintained exclusively
+ * by server/utils/streaks.js (Trigger A: goal-met, Trigger B: midnight rollover).
+ *
  * Updates the User document in-place.
- * Returns the computed stats object for optional use by callers.
+ * Returns the computed stats object (includes current streak/bestStreak from DB for convenience).
  */
 async function recalcUserStats(userId) {
   const user = await User.findOne({ userId });
@@ -35,39 +38,6 @@ async function recalcUserStats(userId) {
     !offDaySet.has(d.date) && d.seconds >= getGoalSecondsForDate(d.date)
   ).length;
 
-  const dataMap = {};
-  allData.forEach(d => { dataMap[d.date] = d.seconds; });
-
-  // Current streak: walk backward from today, skip off days
-  let currentStreak = 0;
-  const todayDate = new Date();
-  for (let i = 0; i < 3650; i++) {
-    const d = new Date(todayDate);
-    d.setDate(d.getDate() - i);
-    const dateStr = d.toISOString().slice(0, 10);
-    if (offDaySet.has(dateStr)) continue; // skip off days
-    if ((dataMap[dateStr] || 0) >= getGoalSecondsForDate(dateStr)) currentStreak++;
-    else break;
-  }
-
-  // Best streak: walk forward through all calendar days from first tracked to last, skip off days
-  let bestStreak = 0, run = 0;
-  const sorted = allData.map(d => d.date).sort();
-  if (sorted.length > 0) {
-    const firstDate = new Date(sorted[0] + 'T00:00:00');
-    const lastDate = new Date(sorted[sorted.length - 1] + 'T00:00:00');
-    for (let d = new Date(firstDate); d <= lastDate; d.setDate(d.getDate() + 1)) {
-      const dateStr = d.toISOString().slice(0, 10);
-      if (offDaySet.has(dateStr)) continue; // skip off days
-      if ((dataMap[dateStr] || 0) >= getGoalSecondsForDate(dateStr)) {
-        run++;
-        bestStreak = Math.max(bestStreak, run);
-      } else {
-        run = 0;
-      }
-    }
-  }
-
   // Level
   const hours = totalSeconds / 3600;
   const levels = [0, 5, 15, 30, 60, 100, 200, 500, 1000, 2000];
@@ -76,9 +46,16 @@ async function recalcUserStats(userId) {
     if (hours >= levels[i]) { level = i + 1; break; }
   }
 
-  await User.updateOne({ userId }, { totalStandingSeconds: totalSeconds, totalDays, currentStreak, bestStreak, level });
+  await User.updateOne({ userId }, { totalStandingSeconds: totalSeconds, totalDays, level });
 
-  return { totalSeconds, totalDays, currentStreak, bestStreak, level };
+  // Return streak values from DB (maintained by streaks.js) for callers that need them
+  return {
+    totalSeconds,
+    totalDays,
+    currentStreak: user.currentStreak || 0,
+    bestStreak: user.bestStreak || 0,
+    level,
+  };
 }
 
 module.exports = { recalcUserStats };

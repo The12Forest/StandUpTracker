@@ -4,7 +4,9 @@ import { useMemo } from 'react';
 const COLORS_DARK = ['#161b22', '#0e4429', '#006d32', '#26a641', '#39d353'];
 const COLORS_LIGHT = ['#ebedf0', '#9be9a8', '#40c463', '#30a14e', '#216e39'];
 
-const DAY_LABELS = ['', 'Mon', '', 'Wed', '', 'Fri', ''];
+// Row labels depend on which day starts the week
+const DAY_LABELS_MONDAY = ['Mon', '', 'Wed', '', 'Fri', '', ''];
+const DAY_LABELS_SUNDAY = ['', 'Mon', '', 'Wed', '', 'Fri', ''];
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 function getLevel(seconds) {
@@ -19,25 +21,29 @@ function getLevel(seconds) {
 const OFF_DAY_COLOR_DARK = '#2d1f3d';
 const OFF_DAY_COLOR_LIGHT = '#e8d5f5';
 
-export default function GitHubHeatmap({ data = {}, offDays = {}, darkMode = true }) {
+export default function GitHubHeatmap({ data = {}, offDays = {}, darkMode = true, firstDayOfWeek = 'monday' }) {
   const colors = darkMode ? COLORS_DARK : COLORS_LIGHT;
   const offDayColor = darkMode ? OFF_DAY_COLOR_DARK : OFF_DAY_COLOR_LIGHT;
+  const dayLabels = firstDayOfWeek === 'sunday' ? DAY_LABELS_SUNDAY : DAY_LABELS_MONDAY;
 
   const { weeks, monthLabels } = useMemo(() => {
     const today = new Date();
     const todayDay = today.getDay(); // 0=Sun
-    // GitHub: columns are weeks, rows are Mon-Sun (Mon=row0, Sun=row6)
-    // We need to map JS getDay (0=Sun) to row index: Mon=0, Tue=1, ..., Sun=6
-    const jsToRow = [6, 0, 1, 2, 3, 4, 5]; // JS day -> row index
+    // Map JS getDay to row index based on configured first day of week
+    const jsToRow = firstDayOfWeek === 'sunday'
+      ? [0, 1, 2, 3, 4, 5, 6] // Sun=row0, Mon=row1, ..., Sat=row6
+      : [6, 0, 1, 2, 3, 4, 5]; // Mon=row0, Tue=row1, ..., Sun=row6
 
     // Calculate the start: go back enough to fill ~53 weeks ending today
     const totalDays = 53 * 7 - (6 - jsToRow[todayDay]); // fill up to today
     const startDate = new Date(today);
     startDate.setDate(startDate.getDate() - totalDays + 1);
 
-    // Adjust start to a Monday
+    // Adjust start to the configured first day
     const startDay = startDate.getDay();
-    const startOffset = startDay === 0 ? -6 : 1 - startDay; // offset to prev Monday
+    const firstDayJs = firstDayOfWeek === 'sunday' ? 0 : 1; // JS day number of configured first day
+    let startOffset = firstDayJs - startDay;
+    if (startOffset > 0) startOffset -= 7; // go backwards to previous first-day
     startDate.setDate(startDate.getDate() + startOffset);
 
     const weeksArr = [];
@@ -70,7 +76,7 @@ export default function GitHubHeatmap({ data = {}, offDays = {}, darkMode = true
     if (currentWeek.length > 0) weeksArr.push(currentWeek);
 
     return { weeks: weeksArr, monthLabels: months };
-  }, [data, offDays]);
+  }, [data, offDays, firstDayOfWeek]);
 
   const cellSize = 11;
   const gap = 3;
@@ -98,7 +104,7 @@ export default function GitHubHeatmap({ data = {}, offDays = {}, darkMode = true
           ))}
 
           {/* Day labels */}
-          {DAY_LABELS.map((label, row) =>
+          {dayLabels.map((label, row) =>
             label ? (
               <text
                 key={row}

@@ -248,7 +248,7 @@ export default function DashboardPage() {
               <Calendar size={16} className="text-accent-400" />
               <span className="text-sm text-zen-400">Activity Heatmap (52 weeks)</span>
             </div>
-            <GitHubHeatmap data={tracking} offDays={offDays} darkMode={true} />
+            <GitHubHeatmap data={tracking} offDays={offDays} darkMode={true} firstDayOfWeek={user?.firstDayOfWeek} />
           </BentoCard>
 
           {/* Quick Stats summary */}

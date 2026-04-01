@@ -3,6 +3,7 @@ import { Users, UserPlus, UserCheck, UserX, Flame, Calendar, Clock, X, Search, T
 import { api } from '../lib/api';
 import { BentoCard } from '../components/BentoCard';
 import GitHubHeatmap from '../components/GitHubHeatmap';
+import useAuthStore from '../stores/useAuthStore';
 import useToastStore from '../stores/useToastStore';
 import useSocketStore from '../stores/useSocketStore';
 
@@ -24,6 +25,7 @@ export default function SocialPage() {
   const [heatmapFriend, setHeatmapFriend] = useState(null);
   const [searchUser, setSearchUser] = useState('');
   const [sending, setSending] = useState(false);
+  const user = useAuthStore((s) => s.user);
   const toast = useToastStore();
   const socket = useSocketStore((s) => s.socket);
   // Ref to track which friend streaks have already been fetched (avoids stale closure)
@@ -220,10 +222,20 @@ export default function SocialPage() {
                       <Timer size={10} className="animate-pulse" /> Timer active
                     </span>
                   )}
-                  <button onClick={() => viewHeatmap(f)} className="btn-ghost text-xs flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); viewHeatmap(f); }}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs text-zen-400
+                               hover:text-zen-100 hover:bg-zen-800/60 cursor-pointer transition-colors duration-150"
+                  >
                     <Calendar size={14} /> Heatmap
                   </button>
-                  <button onClick={() => unfriend(f.userId)} className="btn-ghost text-xs text-red-400 hover:text-red-300">
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); unfriend(f.userId); }}
+                    className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs text-zen-500
+                               hover:text-red-400 hover:bg-red-500/10 cursor-pointer transition-colors duration-150"
+                  >
                     <Trash2 size={14} />
                   </button>
                 </div>
@@ -311,7 +323,7 @@ export default function SocialPage() {
                 <X size={20} />
               </button>
             </div>
-            <GitHubHeatmap data={heatmap} offDays={heatmapOffDays} darkMode={true} />
+            <GitHubHeatmap data={heatmap} offDays={heatmapOffDays} darkMode={true} firstDayOfWeek={user?.firstDayOfWeek} />
             <p className="text-xs text-zen-500 text-center">
               Last 365 days — {Object.values(heatmap).filter(s => s > 0).length} active days
             </p>
