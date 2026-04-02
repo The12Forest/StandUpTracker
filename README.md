@@ -1,207 +1,126 @@
 # StandUpTracker
 
-A full-stack standing-desk time tracker with gamification, real-time sync, social features, and a full admin dashboard.
+**A full-stack standing-desk time tracker with gamification, real-time sync, social features, and a full admin dashboard.**
 
-## Features
-
-- **Timer** — Track standing sessions with start/stop, daily totals, personal streak
-- **Dashboard** — Activity heatmap (52 weeks), bar chart of last 30 days, AI productivity tips
-- **Gamification** — Levels, achievements, daily goals
-- **Real-time Sync** — Socket.io WebSocket keeps all devices in sync
-- **Authentication** — JWT + HttpOnly cookies, email verification, TOTP and email 2FA
-- **Admin Dashboard** — Server health, user management, audit logs, global settings, extended statistics
-- **Social** — Friend requests, friend streaks, group streaks
-- **Leaderboard** — Public ranked standings with period filtering
-- **AI Advisor** — Optional Ollama-powered productivity coaching (per-user opt-in)
-- **PWA** — Installable, works offline with service worker caching
-- **API Keys** — Generate named API keys for programmatic timer control (rate-limited)
-- **Webhooks** — Subscribe to events with HMAC-SHA256 signing (6 event types, up to 5 per user)
+StandUpTracker helps you build healthy standing habits by tracking your daily standing sessions, maintaining streaks, competing with friends, and receiving AI-powered productivity coaching. Features include a real-time dashboard with 52-week activity heatmap, leaderboards, groups, and a comprehensive admin console for server management. The app is installable as a PWA and works offline via service workers. All features are secured with JWT + 2FA, and can be controlled programmatically via API keys or automated via webhooks.
 
 ## Tech Stack
 
 | Layer | Tech |
 |-------|------|
-| Backend | Node.js 20, Express 4, Socket.io 4 |
-| Database | MongoDB 7, Mongoose 8 |
-| Auth | JWT (HttpOnly cookies), Argon2, TOTP (otplib), Nodemailer |
-| Frontend | React 19, Vite 7, Zustand 5, Tailwind CSS 4, Chart.js 4 |
-| Infrastructure | Docker, Docker Compose |
+| **Backend** | Node.js 20, Express 4, Socket.io 4, MongoDB 7 |
+| **Frontend** | React 19, Vite 7, Zustand 5, Tailwind CSS 4 |
+| **Auth** | JWT (HttpOnly cookies), Argon2, TOTP (otplib), Nodemailer |
+| **Optional** | Ollama (for AI advisor), Docker & Compose |
+| **Features** | WebSockets, Service Worker, Web Push, HMAC-SHA256 signing |
 
-## Quick Start
+## Features
 
-### Docker (Recommended)
+**Core Tracking**
+- ⏱️ Timer with start/stop, daily totals, session history
+- 📊 Activity heatmap (52 weeks), bar charts, daily stats
+- 🎯 Configurable daily goals, per-day goal overrides
+- 🔥 Personal streaks (current & best), streak milestones
+
+**Gamification**
+- 🎮 10-level progression system
+- 🏆 Leaderboard with period filtering (week/month/all-time)
+- 🤝 Friend requests and shared friend streaks
+- 👥 Groups with collective streaks
+
+**Social & Community**
+- 👫 Friend lists with online status
+- 📬 Friend requests and acceptance workflow
+- 👥 Group management and shared goals
+- 🔗 Shared heatmap views with friends
+
+**Real-time & Cross-Device**
+- 🔄 Socket.io WebSocket for instant device sync
+- 📱 PWA installation, offline support via Service Worker
+- 🔔 Web Push notifications
+- ⏱️ NTP-based clock synchronization
+
+**Authentication & Security**
+- 🔐 JWT + HttpOnly cookies, email verification
+- 🔑 TOTP 2FA, email 2FA
+- 🎭 Admin impersonation with audit logging
+- 🚫 Soft-ban system for account suspension
+
+**Admin & Configuration**
+- 📈 Server health dashboard with metrics
+- 👥 User management (roles, suspension, deletion)
+- ⚙️ Global settings (SMTP, JWT secret, feature toggles, AI config)
+- 📋 Audit logs (365-day TTL)
+- 🔄 Streak integrity checks
+
+**Developer Features**
+- 🔑 API Key management (programmatic timer access)
+- 🪝 Webhooks (6 event types, up to 5 per user, HMAC-SHA256 signed)
+- 🛠️ Public API at `/api/v1` (rate-limited 60 req/min per key)
+- 🤖 Optional Ollama-powered AI productivity advisor (per-user opt-in)
+
+## Quick Start (Docker Compose)
+
+### Prerequisites
+- Docker and Docker Compose
+
+### Run
 
 ```bash
-# Only MONGO_URI is required — all other settings are managed via the Admin Console
-export MONGO_URI=mongodb://mongo:27017/standuptracker
 docker compose up -d
 ```
 
-The app will be available at `http://localhost:3000`.
+The application will be available at **http://localhost:3000**.
 
-### Local Development
+**Full `docker-compose.yml`:**
+```yaml
+services:
+  app:
+    image: ghcr.io/the12forest/standuptracker:latest
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      MONGO_URI: mongodb://mongo:27017/standuptracker
+    depends_on:
+      mongo:
+        condition: service_healthy
 
-```bash
-# Requires Node.js 20+ and a running MongoDB instance
-export MONGO_URI=mongodb://localhost:27017/standuptracker
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
-# Start backend
-npm install
-npm start
-
-# Start frontend (separate terminal)
-cd frontend
-npm install
-npm run dev
+volumes:
+  mongo-data:
 ```
 
-Frontend dev server runs on `http://localhost:5173` and proxies API requests to the backend.
+## First Launch & Onboarding
 
-## Environment Variables
+On first launch, the app detects that no users exist and redirects to `/setup`:
 
-Only **one** environment variable is required to run the app:
+1. **Configure SMTP** — Enter your mail server details for email verification and 2FA
+2. **Set App URL** — Enter the public URL where the app is accessible
+3. **Create Admin Account** — Register the initial **super_admin** account (this first user becomes super_admin automatically)
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `MONGO_URI` | `mongodb://mongo:27017/standuptracker` | MongoDB connection string |
+After setup completes:
+- Navigate to `/admin` to access the admin dashboard
+- From **Settings**, configure global options (JWT secret is auto-generated)
+- New users who register are assigned the `user` role by default
+- Promote users to `admin` or `moderator` as needed
 
-All other settings (JWT secret, SMTP, app URL, AI configuration, etc.) are generated automatically or managed through the **Admin Console** at `/admin` and stored in the database. There is no `.env` file to maintain beyond the database connection.
+## Documentation
 
-## First Launch
-
-On first launch, the app detects that no users exist and redirects to `/setup` — an onboarding wizard that lets you:
-
-1. Configure SMTP (for email verification and 2FA)
-2. Set the public app URL
-3. Create the initial **super_admin** account
-
-After completing setup, the admin can manage all settings from the **Admin Console**. Subsequent registered users are assigned the `user` role by default.
-
-## API Endpoints
-
-### Auth
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/api/auth/register` | Register |
-| POST | `/api/auth/login` | Login (returns JWT) |
-| GET | `/api/auth/verify-email` | Email verification |
-| GET | `/api/auth/me` | Current user profile |
-| PUT | `/api/auth/profile` | Update theme/goal |
-| PUT | `/api/auth/password` | Change password |
-| PUT | `/api/auth/email` | Change email |
-| POST | `/api/auth/2fa/totp/setup` | TOTP setup (QR) |
-| POST | `/api/auth/2fa/totp/enable` | Enable TOTP |
-| POST | `/api/auth/2fa/totp/disable` | Disable TOTP |
-| POST | `/api/auth/2fa/email/enable` | Enable email 2FA |
-| POST | `/api/auth/2fa/email/disable` | Disable email 2FA |
-| GET | `/api/auth/api-keys` | List API keys |
-| POST | `/api/auth/api-keys` | Create API key |
-| DELETE | `/api/auth/api-keys/:keyId` | Revoke API key |
-| GET | `/api/auth/webhooks` | List webhooks |
-| POST | `/api/auth/webhooks` | Create webhook |
-| PATCH | `/api/auth/webhooks/:webhookId` | Update webhook |
-| DELETE | `/api/auth/webhooks/:webhookId` | Delete webhook |
-
-### Tracking
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/api/tracking` | Save tracking data |
-| GET | `/api/tracking` | Get tracking data |
-| POST | `/api/tracking/sync` | Bulk import from localStorage |
-| GET | `/api/stats` | User stats |
-
-### Admin (admin/super_admin only)
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/admin/stats` | Server health & stats |
-| GET | `/api/admin/users` | User list (paginated) |
-| PUT | `/api/admin/users/:userId` | Update user role/active |
-| DELETE | `/api/admin/users/:userId` | Delete user |
-| POST | `/api/admin/users/bulk-action` | Bulk role/active changes |
-| POST | `/api/admin/impersonate/:userId` | Impersonate user |
-| GET | `/api/admin/logs` | Server logs (paginated) |
-| GET | `/api/admin/settings` | Global settings |
-| PUT | `/api/admin/settings` | Update settings |
-
-### Social
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/social/friends` | Friend list |
-| POST | `/api/social/friends/request` | Send friend request |
-| PUT | `/api/social/friends/:id` | Accept/decline request |
-| DELETE | `/api/social/friends/:id` | Remove friend |
-
-### Groups
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/groups` | List user's groups |
-| POST | `/api/groups` | Create group |
-| PUT | `/api/groups/:id` | Update group |
-| DELETE | `/api/groups/:id` | Delete group |
-| POST | `/api/groups/:id/members` | Add member |
-| DELETE | `/api/groups/:id/members/:userId` | Remove member |
-
-### AI
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/ai/advice` | Get AI productivity tip |
-| GET | `/api/ai/models` | List available Ollama models |
-
-### Setup
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/setup/status` | Check if setup is needed |
-| POST | `/api/setup/complete` | Complete initial setup |
-
-### Public
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/leaderboard` | Public leaderboard |
-| GET | `/api/health` | Health check |
-
-### Public API v1 (API Key Required, Rate Limited 60/min)
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/v1/timer/status` | Get current timer state & today's total |
-| GET | `/api/v1/timer/start` | Start the timer |
-| GET | `/api/v1/timer/stop` | Stop the timer and save session |
-
-## WebSocket Events
-
-| Event | Direction | Description |
-|-------|-----------|-------------|
-| `COUNTER_START` | Client → Server | Start standing session |
-| `COUNTER_STOP` | Client → Server | Stop standing session |
-| `STATE_SYNC` | Server → Client | Counter state broadcast |
-| `TRACKING_UPDATE` | Client ↔ Server | Sync tracking across devices |
-| `FRIEND_ONLINE` | Server → Client | Friend came online |
-| `FRIEND_OFFLINE` | Server → Client | Friend went offline |
-| `HEARTBEAT` | Client → Server | Keep connection alive |
-
-## Project Structure
-
-```
-├── server/
-│   ├── index.js          # Express + Socket.io entry point
-│   ├── config.js         # DB-backed config with env fallbacks
-│   ├── models/           # Mongoose models
-│   ├── routes/           # REST API routes
-│   ├── middleware/        # Auth guards
-│   ├── socket/           # WebSocket event handler
-│   └── utils/            # Email, TOTP, streaks, logging
-├── frontend/
-│   ├── src/
-│   │   ├── pages/        # Route-level React components
-│   │   ├── components/   # Shared UI components (heatmap, charts…)
-│   │   ├── stores/       # Zustand state stores
-│   │   ├── hooks/        # Custom React hooks
-│   │   └── lib/          # API client, utils, migration
-│   ├── public/           # Static assets & PWA manifest
-│   └── vite.config.js    # Vite + proxy config
-├── Dockerfile
-├── docker-compose.yml
-└── package.json          # Backend only
-```
+- **[`docs/TECHNICAL.md`](docs/TECHNICAL.md)** — Local development, architecture, deployment, troubleshooting, and contributing guide
+- **[`docs/API.md`](docs/API.md)** — REST API reference, webhook documentation, and signature verification examples
+- **[`LICENSE`](LICENSE)** — MIT License
 
 ## License
 
