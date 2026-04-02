@@ -14,6 +14,8 @@ A full-stack standing-desk time tracker with gamification, real-time sync, socia
 - **Leaderboard** — Public ranked standings with period filtering
 - **AI Advisor** — Optional Ollama-powered productivity coaching (per-user opt-in)
 - **PWA** — Installable, works offline with service worker caching
+- **API Keys** — Generate named API keys for programmatic timer control (rate-limited)
+- **Webhooks** — Subscribe to events with HMAC-SHA256 signing (6 event types, up to 5 per user)
 
 ## Tech Stack
 
@@ -92,6 +94,13 @@ After completing setup, the admin can manage all settings from the **Admin Conso
 | POST | `/api/auth/2fa/totp/disable` | Disable TOTP |
 | POST | `/api/auth/2fa/email/enable` | Enable email 2FA |
 | POST | `/api/auth/2fa/email/disable` | Disable email 2FA |
+| GET | `/api/auth/api-keys` | List API keys |
+| POST | `/api/auth/api-keys` | Create API key |
+| DELETE | `/api/auth/api-keys/:keyId` | Revoke API key |
+| GET | `/api/auth/webhooks` | List webhooks |
+| POST | `/api/auth/webhooks` | Create webhook |
+| PATCH | `/api/auth/webhooks/:webhookId` | Update webhook |
+| DELETE | `/api/auth/webhooks/:webhookId` | Delete webhook |
 
 ### Tracking
 | Method | Path | Description |
@@ -149,6 +158,13 @@ After completing setup, the admin can manage all settings from the **Admin Conso
 |--------|------|-------------|
 | GET | `/api/leaderboard` | Public leaderboard |
 | GET | `/api/health` | Health check |
+
+### Public API v1 (API Key Required, Rate Limited 60/min)
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v1/timer/status` | Get current timer state & today's total |
+| GET | `/api/v1/timer/start` | Start the timer |
+| GET | `/api/v1/timer/stop` | Stop the timer and save session |
 
 ## WebSocket Events
 
