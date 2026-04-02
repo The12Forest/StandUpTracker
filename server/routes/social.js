@@ -10,6 +10,7 @@ const Notification = require('../models/Notification');
 const OffDay = require('../models/OffDay');
 const { getEffectiveGoalMinutes } = require('../utils/settings');
 const { sendPushNotification } = require('../utils/pushSender');
+const { dispatchWebhook } = require('../utils/webhookDispatch');
 
 const router = express.Router();
 
@@ -114,6 +115,12 @@ router.post('/request', requireVerified, async (req, res) => {
     sendPushNotification(target.userId, 'friend_request', {
       title: 'StandUpTracker',
       body: notif.message,
+    }).catch(() => {});
+
+    // Webhook: friend_request.received (fires for the recipient)
+    dispatchWebhook(target.userId, 'friend_request.received', {
+      fromUserId: req.user.userId,
+      fromUsername: req.user.username,
     }).catch(() => {});
 
     res.status(201).json({ message: 'Friend request sent' });

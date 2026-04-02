@@ -42,7 +42,7 @@ const DEFAULTS = {
 
   // Social / Features
   friendRequestsEnabled: { value: true, description: 'Enable friend requests and social features', section: 'social' },
-  firstDayOfWeek: { value: 'monday', description: 'First day of the week (monday or sunday) — affects week view, heatmap, streaks', section: 'social' },
+  firstDayOfWeek: { value: 'sunday', description: 'First day of the week (sunday or monday) — affects week view, heatmap, leaderboard week boundary, and scheduler', section: 'social' },
   allowUsernameChanges: { value: true, description: 'Allow users to change their own username (admins can always force-change)', section: 'social' },
 
   // Group Settings

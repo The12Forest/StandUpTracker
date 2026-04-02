@@ -8,6 +8,7 @@ const { getEffectiveGoalMinutes } = require('../utils/settings');
 const { checkAndSetGoalMet } = require('../utils/streaks');
 const { recalcUserStats } = require('../utils/recalcStats');
 const { sendPushNotification } = require('../utils/pushSender');
+const { dispatchWebhook } = require('../utils/webhookDispatch');
 
 // Global counter state — Single Source of Truth
 const counterState = {
@@ -167,6 +168,8 @@ function setupSocket(io) {
         });
         // Notify leaderboard viewers that a timer started
         io.to('authenticated').emit('LEADERBOARD_UPDATE');
+        // Webhook: timer.started
+        dispatchWebhook(userId, 'timer.started', { startedAt: now.toISOString() }).catch(() => {});
       } catch (err) {
         logger.warn(`Timer start failed for ${username}: ${err.message}`, { source: 'websocket' });
       }
@@ -243,7 +246,12 @@ function setupSocket(io) {
             sendPushNotification(userId, 'daily_goal_reached', {
               title: 'StandUpTracker', body: notif.message,
             }).catch(() => {});
+            // Webhook: goal.reached
+            dispatchWebhook(userId, 'goal.reached', { minutes: Math.round(todayGoalSeconds / 60), todayTotalSeconds: record.seconds }).catch(() => {});
           }
+
+          // Webhook: timer.stopped
+          dispatchWebhook(userId, 'timer.stopped', { durationSeconds: sessionSeconds, todayTotalSeconds: record.seconds }).catch(() => {});
 
           // Trigger A: evaluate goal_met flag and update personal streak
           checkAndSetGoalMet(userId, date, io).catch(() => {});

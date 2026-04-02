@@ -9,7 +9,7 @@ const useAuthStore = create((set, get) => ({
   originalToken: null,
   isImpersonating: false,
 
-  init: async () => {
+  init: async (retryCount = 0) => {
     // On page load, try to fetch current user using the httpOnly cookie.
     // If the cookie is valid, the server returns user + session token (for socket).
     try {
@@ -19,7 +19,22 @@ const useAuthStore = create((set, get) => ({
       const isImpersonating = sessionStorage.getItem('sut_isImpersonating') === 'true';
       const originalToken = sessionStorage.getItem('sut_originalToken') || null;
       set({ user: data.user, loading: false, isImpersonating, originalToken });
-    } catch {
+    } catch (err) {
+      // Only log the user out on genuine auth failures (401 / isAuthError).
+      // Transient server errors (503, 500) or network failures should retry
+      // before clearing state — this prevents spurious logouts on page reload
+      // when MongoDB has a momentary hiccup.
+      if (err.isAuthError) {
+        clearToken();
+        set({ user: null, loading: false });
+        return;
+      }
+      // Transient error — retry up to 2 times with back-off
+      if (retryCount < 2) {
+        await new Promise(r => setTimeout(r, 1000 * (retryCount + 1)));
+        return get().init(retryCount + 1);
+      }
+      // Retries exhausted — log out
       clearToken();
       set({ user: null, loading: false });
     }

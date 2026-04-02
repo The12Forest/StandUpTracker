@@ -1,11 +1,14 @@
 const express = require('express');
 const argon2 = require('argon2');
 const crypto = require('crypto');
+const { v4: uuidv4 } = require('uuid');
 const QRCode = require('qrcode');
 const rateLimit = require('express-rate-limit');
 const User = require('../models/User');
 const Session = require('../models/Session');
 const AuditLog = require('../models/AuditLog');
+const ApiKey = require('../models/ApiKey');
+const Webhook = require('../models/Webhook');
 const { authenticate } = require('../middleware/auth');
 const { impersonationGuard, softBanCheck, lastActiveTouch } = require('../middleware/guards');
 const { sendVerificationEmail, send2faCode } = require('../utils/email');
@@ -393,7 +396,7 @@ router.get('/me', authenticate, softBanCheck, lastActiveTouch, async (req, res) 
   const enforceDailyGoal = await getSetting('enforceDailyGoal');
   const enforce2fa = await getSetting('enforce2fa');
   const allowUsernameChanges = await getSetting('allowUsernameChanges');
-  const firstDayOfWeek = await getSetting('firstDayOfWeek') || 'monday';
+  const firstDayOfWeek = await getSetting('firstDayOfWeek') || 'sunday';
   const masterGoal = enforceDailyGoal ? await getSetting('masterDailyGoalMinutes') : null;
   const has2fa = u.totpEnabled || u.email2faEnabled;
   res.json({
@@ -696,6 +699,201 @@ router.post('/2fa/email/disable', authenticate, impersonationGuard, async (req, 
     res.json({ message: 'Email 2FA disabled' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to disable email 2FA' });
+  }
+});
+
+// ── API Key Management ──────────────────────────────────────────────────────
+
+// List the calling user's API keys (never returns key hashes)
+router.get('/api-keys', authenticate, softBanCheck, async (req, res) => {
+  try {
+    const keys = await ApiKey.find({ userId: req.user.userId })
+      .select('keyId name prefix createdAt lastUsedAt')
+      .sort({ createdAt: -1 })
+      .lean();
+    res.json({ keys });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch API keys' });
+  }
+});
+
+// Create a new API key — returns the full raw key ONCE; it is never stored in plaintext
+router.post('/api-keys', authenticate, softBanCheck, impersonationGuard, async (req, res) => {
+  try {
+    const { name } = req.body;
+    if (!name || typeof name !== 'string' || !name.trim()) {
+      return res.status(400).json({ error: 'Key name is required' });
+    }
+    const trimmedName = name.trim().slice(0, 100);
+
+    const existing = await ApiKey.countDocuments({ userId: req.user.userId });
+    if (existing >= 10) {
+      return res.status(400).json({ error: 'Maximum of 10 API keys per user' });
+    }
+
+    // Generate a URL-safe random key: "sut_" prefix + 40 hex chars
+    const rawKey = 'sut_' + crypto.randomBytes(20).toString('hex');
+    const keyHash = crypto.createHash('sha256').update(rawKey).digest('hex');
+    const keyId = uuidv4();
+
+    await ApiKey.create({
+      keyId,
+      userId: req.user.userId,
+      name: trimmedName,
+      keyHash,
+      prefix: rawKey.slice(0, 8),
+    });
+
+    logger.info(`API key created: ${trimmedName} for ${req.user.username}`, {
+      source: 'auth', userId: req.user.userId,
+    });
+
+    // Return the raw key exactly once — it cannot be recovered after this response
+    res.status(201).json({
+      keyId,
+      name: trimmedName,
+      key: rawKey,
+      prefix: rawKey.slice(0, 8),
+      createdAt: new Date(),
+      warning: 'Copy this key now. It will never be shown again.',
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to create API key' });
+  }
+});
+
+// Revoke (delete) an API key
+router.delete('/api-keys/:keyId', authenticate, softBanCheck, impersonationGuard, async (req, res) => {
+  try {
+    const result = await ApiKey.deleteOne({ keyId: req.params.keyId, userId: req.user.userId });
+    if (result.deletedCount === 0) {
+      return res.status(404).json({ error: 'API key not found' });
+    }
+    logger.info(`API key revoked: ${req.params.keyId} by ${req.user.username}`, {
+      source: 'auth', userId: req.user.userId,
+    });
+    res.json({ message: 'API key revoked' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to revoke API key' });
+  }
+});
+
+// ── Webhook Management ──────────────────────────────────────────────────────
+
+// List the calling user's webhooks (never returns the secret)
+router.get('/webhooks', authenticate, softBanCheck, async (req, res) => {
+  try {
+    const webhooks = await Webhook.find({ userId: req.user.userId })
+      .select('webhookId name url events enabled createdAt')
+      .sort({ createdAt: -1 })
+      .lean();
+    res.json({ webhooks });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch webhooks' });
+  }
+});
+
+// Create a new webhook — returns the signing secret ONCE
+router.post('/webhooks', authenticate, softBanCheck, impersonationGuard, async (req, res) => {
+  try {
+    const { name, url, events } = req.body;
+
+    if (!name || typeof name !== 'string' || !name.trim()) {
+      return res.status(400).json({ error: 'Webhook name is required' });
+    }
+    if (!url || typeof url !== 'string' || !url.trim()) {
+      return res.status(400).json({ error: 'Webhook URL is required' });
+    }
+    if (!/^https?:\/\/.+/.test(url.trim())) {
+      return res.status(400).json({ error: 'Webhook URL must start with http:// or https://' });
+    }
+    if (!Array.isArray(events) || events.length === 0) {
+      return res.status(400).json({ error: 'At least one event type is required' });
+    }
+
+    const supportedEvents = Webhook.schema.path('events').caster.enumValues;
+    const invalidEvents = events.filter(e => !supportedEvents.includes(e));
+    if (invalidEvents.length > 0) {
+      return res.status(400).json({ error: `Unsupported event types: ${invalidEvents.join(', ')}` });
+    }
+
+    const existing = await Webhook.countDocuments({ userId: req.user.userId });
+    if (existing >= 5) {
+      return res.status(400).json({ error: 'Maximum of 5 webhooks per user' });
+    }
+
+    const webhookId = uuidv4();
+    const secret = 'whsec_' + crypto.randomBytes(24).toString('hex');
+
+    await Webhook.create({
+      webhookId,
+      userId: req.user.userId,
+      name: name.trim().slice(0, 100),
+      url: url.trim(),
+      events,
+      enabled: true,
+      secret,
+    });
+
+    logger.info(`Webhook created: ${name} for ${req.user.username}`, {
+      source: 'auth', userId: req.user.userId,
+    });
+
+    res.status(201).json({
+      webhookId,
+      name: name.trim(),
+      url: url.trim(),
+      events,
+      enabled: true,
+      secret,
+      warning: 'Copy this secret now. It will never be shown again.',
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to create webhook' });
+  }
+});
+
+// Update webhook (enable/disable or change events/url/name)
+router.patch('/webhooks/:webhookId', authenticate, softBanCheck, impersonationGuard, async (req, res) => {
+  try {
+    const update = {};
+    const { enabled, name, url, events } = req.body;
+    if (typeof enabled === 'boolean') update.enabled = enabled;
+    if (name && typeof name === 'string') update.name = name.trim().slice(0, 100);
+    if (url && typeof url === 'string') {
+      if (!/^https?:\/\/.+/.test(url.trim())) {
+        return res.status(400).json({ error: 'Webhook URL must start with http:// or https://' });
+      }
+      update.url = url.trim();
+    }
+    if (Array.isArray(events) && events.length > 0) update.events = events;
+
+    const result = await Webhook.findOneAndUpdate(
+      { webhookId: req.params.webhookId, userId: req.user.userId },
+      { $set: update },
+      { new: true }
+    ).select('webhookId name url events enabled');
+
+    if (!result) return res.status(404).json({ error: 'Webhook not found' });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update webhook' });
+  }
+});
+
+// Delete a webhook permanently (including its secret)
+router.delete('/webhooks/:webhookId', authenticate, softBanCheck, impersonationGuard, async (req, res) => {
+  try {
+    const result = await Webhook.deleteOne({ webhookId: req.params.webhookId, userId: req.user.userId });
+    if (result.deletedCount === 0) {
+      return res.status(404).json({ error: 'Webhook not found' });
+    }
+    logger.info(`Webhook deleted: ${req.params.webhookId} by ${req.user.username}`, {
+      source: 'auth', userId: req.user.userId,
+    });
+    res.json({ message: 'Webhook deleted' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete webhook' });
   }
 });
 

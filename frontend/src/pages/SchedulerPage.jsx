@@ -334,7 +334,7 @@ export default function SchedulerPage() {
   const today = new Date().toISOString().slice(0, 10);
 
   // Week state
-  const firstDayOfWeek = user?.firstDayOfWeek ?? 'monday';
+  const firstDayOfWeek = user?.firstDayOfWeek ?? 'sunday';
   const [weekStart, setWeekStart] = useState(() => getWeekStart(new Date(), firstDayOfWeek));
   const weekDays = useMemo(() => getWeekDays(weekStart), [weekStart]);
 
@@ -427,11 +427,12 @@ export default function SchedulerPage() {
     };
   }, [socket, view, fetchPersonal, fetchGroupData]);
 
-  // Week navigation
+  // Week navigation — always re-snap to the configured first day of week so that
+  // month/year boundary arithmetic can never leave the week start mid-week.
   const navWeek = (dir) => {
     const d = new Date(weekStart + 'T00:00:00');
     d.setDate(d.getDate() + dir * 7);
-    setWeekStart(d.toISOString().slice(0, 10));
+    setWeekStart(getWeekStart(d, firstDayOfWeek));
   };
 
   const goToday = () => setWeekStart(getWeekStart(new Date(), firstDayOfWeek));

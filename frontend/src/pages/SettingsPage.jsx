@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Settings, User, Lock, Shield, Key, Mail, Sparkles, Copy, Bell, Clock } from 'lucide-react';
+import { Settings, User, Lock, Shield, Key, Mail, Sparkles, Copy, Bell, Clock, Plus, Trash2, RefreshCw, Webhook } from 'lucide-react';
 import useAuthStore from '../stores/useAuthStore';
 import useToastStore from '../stores/useToastStore';
 import { api } from '../lib/api';
@@ -44,6 +44,27 @@ export default function SettingsPage() {
   const [usernameError, setUsernameError] = useState('');
   const [usernameSaving, setUsernameSaving] = useState(false);
 
+  // API Key state
+  const [apiKeys, setApiKeys] = useState([]);
+  const [newKeyName, setNewKeyName] = useState('');
+  const [createdKey, setCreatedKey] = useState(null); // shown once after creation
+  const [apiKeyLoading, setApiKeyLoading] = useState(false);
+
+  // Webhook state
+  const [webhooks, setWebhooks] = useState([]);
+  const [newWebhook, setNewWebhook] = useState({ name: '', url: '', events: [] });
+  const [createdWebhookSecret, setCreatedWebhookSecret] = useState(null);
+  const [webhookLoading, setWebhookLoading] = useState(false);
+
+  const WEBHOOK_EVENTS = [
+    { value: 'timer.started', label: 'Timer Started' },
+    { value: 'timer.stopped', label: 'Timer Stopped' },
+    { value: 'goal.reached', label: 'Goal Reached' },
+    { value: 'streak.incremented', label: 'Streak Incremented' },
+    { value: 'streak.broken', label: 'Streak Broken' },
+    { value: 'friend_request.received', label: 'Friend Request Received' },
+  ];
+
   useEffect(() => {
     if (user) {
       setProfile({
@@ -57,6 +78,64 @@ export default function SettingsPage() {
       setReminderTime(user.standupReminderTime || '12:00');
     }
   }, [user]);
+
+  // Load API keys and webhooks on mount
+  useEffect(() => {
+    api('/api/auth/api-keys').then(d => setApiKeys(d.keys || [])).catch(() => {});
+    api('/api/auth/webhooks').then(d => setWebhooks(d.webhooks || [])).catch(() => {});
+  }, []);
+
+  const createApiKey = async () => {
+    if (!newKeyName.trim()) { toast.error('Key name is required'); return; }
+    setApiKeyLoading(true);
+    try {
+      const data = await api('/api/auth/api-keys', { method: 'POST', body: JSON.stringify({ name: newKeyName }) });
+      setCreatedKey(data);
+      setNewKeyName('');
+      const updated = await api('/api/auth/api-keys');
+      setApiKeys(updated.keys || []);
+    } catch (err) { toast.error(err.message); }
+    setApiKeyLoading(false);
+  };
+
+  const revokeApiKey = async (keyId) => {
+    if (!window.confirm('Revoke this API key? Any integrations using it will stop working.')) return;
+    try {
+      await api(`/api/auth/api-keys/${keyId}`, { method: 'DELETE' });
+      setApiKeys(prev => prev.filter(k => k.keyId !== keyId));
+      toast.success('API key revoked');
+    } catch (err) { toast.error(err.message); }
+  };
+
+  const createWebhook = async () => {
+    if (!newWebhook.name.trim() || !newWebhook.url.trim()) { toast.error('Name and URL are required'); return; }
+    if (newWebhook.events.length === 0) { toast.error('Select at least one event'); return; }
+    setWebhookLoading(true);
+    try {
+      const data = await api('/api/auth/webhooks', { method: 'POST', body: JSON.stringify(newWebhook) });
+      setCreatedWebhookSecret({ secret: data.secret, webhookId: data.webhookId });
+      setNewWebhook({ name: '', url: '', events: [] });
+      const updated = await api('/api/auth/webhooks');
+      setWebhooks(updated.webhooks || []);
+    } catch (err) { toast.error(err.message); }
+    setWebhookLoading(false);
+  };
+
+  const toggleWebhook = async (webhookId, enabled) => {
+    try {
+      await api(`/api/auth/webhooks/${webhookId}`, { method: 'PATCH', body: JSON.stringify({ enabled }) });
+      setWebhooks(prev => prev.map(w => w.webhookId === webhookId ? { ...w, enabled } : w));
+    } catch (err) { toast.error(err.message); }
+  };
+
+  const deleteWebhook = async (webhookId) => {
+    if (!window.confirm('Delete this webhook? This cannot be undone.')) return;
+    try {
+      await api(`/api/auth/webhooks/${webhookId}`, { method: 'DELETE' });
+      setWebhooks(prev => prev.filter(w => w.webhookId !== webhookId));
+      toast.success('Webhook deleted');
+    } catch (err) { toast.error(err.message); }
+  };
 
   const handleProfileSave = async () => {
     const goal = Number(profile.dailyGoalMinutes);
@@ -545,6 +624,160 @@ export default function SettingsPage() {
             </div>
           )}
         </div>
+      </BentoCard>
+      {/* API Access */}
+      <BentoCard>
+        <div className="flex items-center gap-2 mb-4">
+          <Key size={16} className="text-accent-400" />
+          <span className="text-sm font-semibold text-zen-200">API Access</span>
+        </div>
+        <p className="text-xs text-zen-500 mb-4">
+          Generate API keys to control your timer from external tools or scripts. Each key authenticates as you.
+        </p>
+
+        {/* Revealed key — shown once */}
+        {createdKey && (
+          <div className="bg-accent-500/10 border border-accent-500/30 rounded-xl p-4 mb-4 space-y-2">
+            <p className="text-xs font-semibold text-accent-300">Your new API key — copy it now, it will not be shown again</p>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 text-xs font-mono text-accent-200 bg-zen-900 px-3 py-2 rounded-lg break-all">{createdKey.key}</code>
+              <button onClick={() => { navigator.clipboard.writeText(createdKey.key); toast.success('Copied'); }} className="btn-ghost p-2"><Copy size={14} /></button>
+            </div>
+            <button onClick={() => setCreatedKey(null)} className="text-xs text-zen-500 hover:text-zen-300">Dismiss</button>
+          </div>
+        )}
+
+        {/* Existing keys */}
+        {apiKeys.length > 0 && (
+          <div className="space-y-2 mb-4">
+            {apiKeys.map(k => (
+              <div key={k.keyId} className="flex items-center justify-between py-2 px-3 bg-zen-800/40 rounded-lg">
+                <div>
+                  <p className="text-sm text-zen-200 font-medium">{k.name}</p>
+                  <p className="text-[10px] text-zen-500 font-mono">{k.prefix}… · Created {new Date(k.createdAt).toLocaleDateString()}{k.lastUsedAt ? ` · Last used ${new Date(k.lastUsedAt).toLocaleDateString()}` : ' · Never used'}</p>
+                </div>
+                <button onClick={() => revokeApiKey(k.keyId)} className="btn-ghost text-xs text-danger-400 flex items-center gap-1">
+                  <Trash2 size={12} /> Revoke
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Create new key */}
+        <div className="flex gap-2">
+          <input
+            value={newKeyName}
+            onChange={(e) => setNewKeyName(e.target.value)}
+            className="glass-input flex-1"
+            placeholder="Key name (e.g. Home automation)"
+            maxLength={100}
+          />
+          <button onClick={createApiKey} disabled={apiKeyLoading} className="btn-accent text-xs whitespace-nowrap flex items-center gap-1">
+            <Plus size={12} /> {apiKeyLoading ? 'Creating…' : 'Create Key'}
+          </button>
+        </div>
+        <p className="text-[10px] text-zen-600 mt-2">
+          Authenticate with <code className="text-zen-400">Authorization: Bearer &lt;key&gt;</code> or <code className="text-zen-400">?api_key=&lt;key&gt;</code>
+        </p>
+      </BentoCard>
+
+      {/* Webhooks */}
+      <BentoCard>
+        <div className="flex items-center gap-2 mb-4">
+          <Webhook size={16} className="text-accent-400" />
+          <span className="text-sm font-semibold text-zen-200">Webhooks</span>
+        </div>
+        <p className="text-xs text-zen-500 mb-4">
+          Receive HTTP POST notifications when events happen. Payloads are signed with HMAC-SHA256.
+        </p>
+
+        {/* Revealed secret — shown once */}
+        {createdWebhookSecret && (
+          <div className="bg-accent-500/10 border border-accent-500/30 rounded-xl p-4 mb-4 space-y-2">
+            <p className="text-xs font-semibold text-accent-300">Webhook signing secret — copy it now, it will not be shown again</p>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 text-xs font-mono text-accent-200 bg-zen-900 px-3 py-2 rounded-lg break-all">{createdWebhookSecret.secret}</code>
+              <button onClick={() => { navigator.clipboard.writeText(createdWebhookSecret.secret); toast.success('Copied'); }} className="btn-ghost p-2"><Copy size={14} /></button>
+            </div>
+            <p className="text-[10px] text-zen-500">Verify the <code className="text-zen-400">X-StandupTracker-Signature: sha256=&lt;hex&gt;</code> header on incoming requests.</p>
+            <button onClick={() => setCreatedWebhookSecret(null)} className="text-xs text-zen-500 hover:text-zen-300">Dismiss</button>
+          </div>
+        )}
+
+        {/* Existing webhooks */}
+        {webhooks.length > 0 && (
+          <div className="space-y-3 mb-4">
+            {webhooks.map(wh => (
+              <div key={wh.webhookId} className="bg-zen-800/40 rounded-lg p-3">
+                <div className="flex items-center justify-between mb-1">
+                  <div>
+                    <p className="text-sm text-zen-200 font-medium">{wh.name}</p>
+                    <p className="text-[10px] text-zen-500 font-mono truncate max-w-xs">{wh.url}</p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      onClick={() => toggleWebhook(wh.webhookId, !wh.enabled)}
+                      className={`w-8 h-4 rounded-full transition-colors relative ${wh.enabled ? 'bg-accent-500' : 'bg-zen-700'}`}
+                    >
+                      <div className={`w-3 h-3 bg-white rounded-full absolute top-0.5 transition-all ${wh.enabled ? 'left-4' : 'left-0.5'}`} />
+                    </button>
+                    <button onClick={() => deleteWebhook(wh.webhookId)} className="btn-ghost text-xs text-danger-400 p-1"><Trash2 size={12} /></button>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {wh.events.map(ev => (
+                    <span key={ev} className="text-[9px] px-1.5 py-0.5 bg-zen-700/50 rounded text-zen-400">{ev}</span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Create new webhook */}
+        {webhooks.length < 5 && (
+          <div className="space-y-3 border-t border-zen-700/30 pt-3">
+            <p className="text-xs text-zen-400 font-medium">Add webhook</p>
+            <input
+              value={newWebhook.name}
+              onChange={(e) => setNewWebhook(w => ({ ...w, name: e.target.value }))}
+              className="glass-input w-full"
+              placeholder="Name (e.g. Zapier)"
+              maxLength={100}
+            />
+            <input
+              value={newWebhook.url}
+              onChange={(e) => setNewWebhook(w => ({ ...w, url: e.target.value }))}
+              className="glass-input w-full"
+              placeholder="https://example.com/webhook"
+            />
+            <div>
+              <p className="text-xs text-zen-500 mb-1">Events</p>
+              <div className="flex flex-wrap gap-2">
+                {WEBHOOK_EVENTS.map(ev => {
+                  const active = newWebhook.events.includes(ev.value);
+                  return (
+                    <button
+                      key={ev.value}
+                      onClick={() => setNewWebhook(w => ({
+                        ...w,
+                        events: active ? w.events.filter(e => e !== ev.value) : [...w.events, ev.value],
+                      }))}
+                      className={`text-xs px-2 py-1 rounded-md border transition-colors ${active ? 'border-accent-500/50 bg-accent-500/20 text-accent-300' : 'border-zen-700/30 text-zen-500'}`}
+                    >
+                      {ev.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <button onClick={createWebhook} disabled={webhookLoading} className="btn-accent text-xs flex items-center gap-1">
+              <Plus size={12} /> {webhookLoading ? 'Creating…' : 'Add Webhook'}
+            </button>
+          </div>
+        )}
+        {webhooks.length >= 5 && <p className="text-xs text-zen-500 border-t border-zen-700/30 pt-3">Maximum of 5 webhooks reached.</p>}
       </BentoCard>
     </div>
   );

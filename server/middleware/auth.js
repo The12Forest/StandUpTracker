@@ -1,5 +1,7 @@
+const crypto = require('crypto');
 const User = require('../models/User');
 const Session = require('../models/Session');
+const ApiKey = require('../models/ApiKey');
 
 /**
  * Extract session token from request.
@@ -65,7 +67,8 @@ async function authenticate(req, res, next) {
 
     next();
   } catch (err) {
-    return res.status(401).json({ error: 'Authentication failed' });
+    // DB/network error — don't treat as auth failure; return 503 so the client can retry
+    return res.status(503).json({ error: 'Service temporarily unavailable, please retry' });
   }
 }
 
@@ -86,4 +89,35 @@ function requireVerified(req, res, next) {
   next();
 }
 
-module.exports = { authenticate, requireRole, requireVerified, getTokenFromRequest };
+/**
+ * Authenticate an API key from Authorization: Bearer header or ?api_key= query param.
+ * Sets req.user and req.apiKey on success.
+ */
+async function authenticateApiKey(req, res, next) {
+  let rawKey = null;
+  const header = req.headers.authorization;
+  if (header && header.startsWith('Bearer ')) rawKey = header.slice(7);
+  if (!rawKey && req.query.api_key) rawKey = req.query.api_key;
+  if (!rawKey) return res.status(401).json({ error: 'API key required' });
+
+  try {
+    const keyHash = crypto.createHash('sha256').update(rawKey).digest('hex');
+    const apiKey = await ApiKey.findOne({ keyHash });
+    if (!apiKey) return res.status(401).json({ error: 'Invalid API key' });
+
+    const user = await User.findOne({ userId: apiKey.userId, active: true });
+    if (!user) return res.status(401).json({ error: 'User not found or deactivated' });
+
+    req.user = user;
+    req.apiKey = apiKey;
+
+    // Update lastUsedAt asynchronously (best-effort, don't block the request)
+    ApiKey.updateOne({ keyId: apiKey.keyId }, { lastUsedAt: new Date() }).catch(() => {});
+
+    next();
+  } catch (err) {
+    return res.status(503).json({ error: 'Service temporarily unavailable, please retry' });
+  }
+}
+
+module.exports = { authenticate, requireRole, requireVerified, getTokenFromRequest, authenticateApiKey };

@@ -21,7 +21,7 @@ function getLevel(seconds) {
 const OFF_DAY_COLOR_DARK = '#2d1f3d';
 const OFF_DAY_COLOR_LIGHT = '#e8d5f5';
 
-export default function GitHubHeatmap({ data = {}, offDays = {}, darkMode = true, firstDayOfWeek = 'monday' }) {
+export default function GitHubHeatmap({ data = {}, offDays = {}, darkMode = true, firstDayOfWeek = 'sunday' }) {
   const colors = darkMode ? COLORS_DARK : COLORS_LIGHT;
   const offDayColor = darkMode ? OFF_DAY_COLOR_DARK : OFF_DAY_COLOR_LIGHT;
   const dayLabels = firstDayOfWeek === 'sunday' ? DAY_LABELS_SUNDAY : DAY_LABELS_MONDAY;

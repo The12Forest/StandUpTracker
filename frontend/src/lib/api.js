@@ -19,7 +19,10 @@ export async function api(path, options = {}) {
       const params = data.sessionExpired ? '?expired=true' : '';
       window.location.href = `/login${params}`;
     }
-    throw new Error(data.error || 'Session expired');
+    const err = new Error(data.error || 'Session expired');
+    err.status = 401;
+    err.isAuthError = true;
+    throw err;
   }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {

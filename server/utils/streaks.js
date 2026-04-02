@@ -7,6 +7,7 @@ const Notification = require('../models/Notification');
 const { getEffectiveGoalMinutes, isOffDay } = require('./settings');
 const logger = require('./logger');
 const { sendPushNotification } = require('./pushSender');
+const { dispatchWebhook } = require('./webhookDispatch');
 
 // ─── Helpers ───
 
@@ -155,6 +156,9 @@ async function recalcPersonalStreak(userId, io) {
 
     // Streak milestone notification (increment only)
     if (currentStreak > oldCurrent && currentStreak > 0) {
+      // Webhook: streak.incremented
+      dispatchWebhook(userId, 'streak.incremented', { currentStreak, previousStreak: oldCurrent }).catch(() => {});
+
       const milestones = [3, 7, 14, 30, 50, 100, 200, 365];
       if (milestones.includes(currentStreak)) {
         const notif = await Notification.create({
@@ -222,6 +226,9 @@ async function midnightRollover(io) {
       if (io) {
         io.to(`user:${user.userId}`).emit('STREAK_UPDATE', { currentStreak: 0, bestStreak: user.bestStreak });
       }
+
+      // Webhook: streak.broken
+      dispatchWebhook(user.userId, 'streak.broken', { previousStreak: oldStreak }).catch(() => {});
 
       // Notification for streak broken
       if (oldStreak >= 3) {
