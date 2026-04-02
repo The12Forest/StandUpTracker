@@ -25,7 +25,7 @@ StandUpTracker helps you build healthy standing habits by tracking your daily st
 docker compose up -d
 ```
 
-The application will be available at **http://localhost:3000**.
+The application will be available at **http://localhost:3000**. __Can be changed laiter.__
 
 **Full `docker-compose.yml`:**
 ```yaml
