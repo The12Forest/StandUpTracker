@@ -478,6 +478,9 @@ function UsersTab() {
   };
 
   const isSuperAdmin = currentUser?.role === 'super_admin';
+  const isAdmin = currentUser?.role === 'admin';
+  const canEditRoles = isSuperAdmin || isAdmin;
+  const canEditTime = isSuperAdmin || isAdmin;
 
   return (
     <div className="space-y-4">
@@ -602,9 +605,10 @@ function UsersTab() {
                       <div className="flex items-center gap-1">
                         <select value={u.role} onChange={(e) => updateRole(u.userId, e.target.value, u.username)}
                           className="bg-zen-800 border border-zen-700/50 rounded-lg text-xs text-zen-300 px-2 py-1"
-                          disabled={!isSuperAdmin || u.userId === currentUser?.userId}>
+                          disabled={!canEditRoles || u.userId === currentUser?.userId || (isAdmin && u.role === 'super_admin')}>
                           <option value="user">User</option>
                           <option value="moderator">Moderator</option>
+                          <option value="manager">Manager</option>
                           <option value="admin">Admin</option>
                           {isSuperAdmin && <option value="super_admin">Super Admin</option>}
                         </select>
@@ -636,9 +640,11 @@ function UsersTab() {
                         )
                       ) : (
                         <>
-                          <button onClick={() => navigate(`/admin/user/${u.userId}/times`)} className="text-[10px] px-1.5 py-0.5 rounded text-accent-400 hover:bg-accent-500/10 flex items-center gap-0.5" title="Edit Daily Times">
-                            <Clock size={11} /> Edit Time
-                          </button>
+                          {canEditTime && (
+                            <button onClick={() => navigate(`/admin/user/${u.userId}/times`)} className="text-[10px] px-1.5 py-0.5 rounded text-accent-400 hover:bg-accent-500/10 flex items-center gap-0.5" title="Edit Daily Times">
+                              <Clock size={11} /> Edit Time
+                            </button>
+                          )}
                           {isSuperAdmin && u.role !== 'super_admin' && (
                             <>
                               <button onClick={() => handleImpersonate(u.userId)} className="text-[10px] px-1.5 py-0.5 rounded text-warn-400 hover:bg-warn-500/10 flex items-center gap-0.5" title="Impersonate">

@@ -59,7 +59,7 @@ function currentDayGuard(req, res, next) {
   const { date } = req.body;
   if (!date) return next();
   const today = new Date().toISOString().slice(0, 10);
-  if (date !== today && !['admin', 'super_admin', 'moderator'].includes(req.user.role)) {
+  if (date !== today && !['manager', 'admin', 'super_admin', 'moderator'].includes(req.user.role)) {
     return res.status(403).json({ error: 'Users can only edit current-day recordings' });
   }
   next();

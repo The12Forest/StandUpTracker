@@ -61,7 +61,7 @@ function setupSocket(io) {
     socket.join(`user:${userId}`);
 
     // Join role-based rooms
-    if (['admin', 'super_admin'].includes(role)) {
+    if (['manager', 'admin', 'super_admin'].includes(role)) {
       socket.join('admins');
     }
     socket.join('authenticated');

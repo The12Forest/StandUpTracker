@@ -23,7 +23,7 @@ export default function Sidebar() {
   const connected = useSocketStore((s) => s.connected);
   const navigate = useNavigate();
 
-  const isAdmin = user && ['admin', 'super_admin'].includes(user.role);
+  const isAdmin = user && ['manager', 'admin', 'super_admin'].includes(user.role);
 
   const handleLogout = () => {
     disconnect();

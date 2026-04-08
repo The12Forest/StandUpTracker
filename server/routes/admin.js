@@ -25,7 +25,8 @@ const crypto = require('crypto');
 
 const router = express.Router();
 
-const adminRoles = ['admin', 'super_admin'];
+const adminRoles = ['manager', 'admin', 'super_admin'];
+const editTimeRoles = ['admin', 'super_admin'];
 
 router.use(authenticate, softBanCheck, lastActiveTouch);
 
@@ -281,26 +282,30 @@ router.get('/users', requireRole(...adminRoles), async (req, res) => {
 });
 
 // ─── Update user role/status ───
-router.put('/users/:userId', requireRole('super_admin'), async (req, res) => {
+router.put('/users/:userId', requireRole('admin', 'super_admin'), async (req, res) => {
   try {
     const { role, active, blockedUntil } = req.body;
     const user = await User.findOne({ userId: req.params.userId });
     if (!user) return res.status(404).json({ error: 'User not found' });
 
-    // Block self-demotion for super_admins
+    // Block self-modification
     if (user.userId === req.user.userId) {
       if (role && role !== req.user.role) {
-        return res.status(403).json({ error: 'Super Admins cannot change their own role' });
+        return res.status(403).json({ error: 'Cannot change your own role' });
       }
-      // Allow other self-modifications (active, blockedUntil) to fall through — but the generic guard below still blocks
       return res.status(400).json({ error: 'Cannot modify your own account here' });
     }
 
     const before = { role: user.role, active: user.active };
-    if (role && ['user', 'moderator', 'admin', 'super_admin'].includes(role)) {
+    if (role && ['user', 'moderator', 'manager', 'admin', 'super_admin'].includes(role)) {
       // Only a super_admin can promote to super_admin
       if (role === 'super_admin' && req.user.role !== 'super_admin') {
         return res.status(403).json({ error: 'Only a Super Admin can promote users to Super Admin' });
+      }
+      // Admins can assign user, moderator, manager, admin — but not super_admin (handled above)
+      // Admins cannot demote super_admins
+      if (req.user.role === 'admin' && user.role === 'super_admin') {
+        return res.status(403).json({ error: 'Admins cannot modify Super Admin accounts' });
       }
       user.role = role;
     }
@@ -362,7 +367,7 @@ router.post('/users/bulk', requireRole('super_admin'), async (req, res) => {
         affected = safeIds.length;
         break;
       case 'setRole':
-        if (!params.role || !['user', 'moderator', 'admin'].includes(params.role)) {
+        if (!params.role || !['user', 'moderator', 'manager', 'admin'].includes(params.role)) {
           return res.status(400).json({ error: 'Valid role required' });
         }
         await User.updateMany({ userId: { $in: safeIds } }, { role: params.role });
@@ -559,7 +564,7 @@ router.post('/sessions/revoke/:userId', requireRole(...adminRoles), async (req, 
 });
 
 // ─── Admin Tracking CRUD ───
-router.get('/tracking/:userId', requireRole(...adminRoles), async (req, res) => {
+router.get('/tracking/:userId', requireRole(...editTimeRoles), async (req, res) => {
   try {
     const data = await TrackingData.find({ userId: req.params.userId }).sort({ date: -1 }).limit(365);
     res.json(data);
@@ -568,7 +573,7 @@ router.get('/tracking/:userId', requireRole(...adminRoles), async (req, res) => 
   }
 });
 
-router.put('/tracking/:userId/:date', requireRole(...adminRoles), async (req, res) => {
+router.put('/tracking/:userId/:date', requireRole(...editTimeRoles), async (req, res) => {
   try {
     const { seconds, sessions } = req.body;
     const before = await TrackingData.findOne({ userId: req.params.userId, date: req.params.date });
@@ -609,7 +614,7 @@ router.put('/tracking/:userId/:date', requireRole(...adminRoles), async (req, re
   }
 });
 
-router.delete('/tracking/:userId/:date', requireRole(...adminRoles), async (req, res) => {
+router.delete('/tracking/:userId/:date', requireRole(...editTimeRoles), async (req, res) => {
   try {
     const before = await TrackingData.findOne({ userId: req.params.userId, date: req.params.date });
     if (!before) return res.status(404).json({ error: 'Record not found' });
@@ -635,7 +640,7 @@ router.delete('/tracking/:userId/:date', requireRole(...adminRoles), async (req,
 });
 
 // Reset manual override to original timer value
-router.delete('/tracking/:userId/:date/override', requireRole(...adminRoles), async (req, res) => {
+router.delete('/tracking/:userId/:date/override', requireRole(...editTimeRoles), async (req, res) => {
   try {
     const record = await TrackingData.findOne({ userId: req.params.userId, date: req.params.date });
     if (!record) return res.status(404).json({ error: 'Record not found' });
@@ -1180,7 +1185,7 @@ router.put('/users/:userId/block', requireRole('super_admin'), async (req, res) 
 });
 
 // ─── Admin: Per-user per-day time editor data ───
-router.get('/users/:userId/daily-times', requireRole(...adminRoles), async (req, res) => {
+router.get('/users/:userId/daily-times', requireRole(...editTimeRoles), async (req, res) => {
   try {
     const user = await User.findOne({ userId: req.params.userId });
     if (!user) return res.status(404).json({ error: 'User not found' });
@@ -1257,7 +1262,7 @@ router.get('/users/:userId/daily-times', requireRole(...adminRoles), async (req,
 });
 
 // ─── Admin: Set per-day goal override ───
-router.put('/users/:userId/daily-goal/:date', requireRole(...adminRoles), async (req, res) => {
+router.put('/users/:userId/daily-goal/:date', requireRole(...editTimeRoles), async (req, res) => {
   try {
     const { goalMinutes } = req.body;
     if (!goalMinutes || goalMinutes < 1 || goalMinutes > 1440) {
@@ -1294,7 +1299,7 @@ router.put('/users/:userId/daily-goal/:date', requireRole(...adminRoles), async 
 });
 
 // ─── Admin: Clear per-day goal override ───
-router.delete('/users/:userId/daily-goal/:date', requireRole(...adminRoles), async (req, res) => {
+router.delete('/users/:userId/daily-goal/:date', requireRole(...editTimeRoles), async (req, res) => {
   try {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(req.params.date)) {
       return res.status(400).json({ error: 'Invalid date format' });
@@ -1327,7 +1332,7 @@ router.delete('/users/:userId/daily-goal/:date', requireRole(...adminRoles), asy
 });
 
 // ─── Admin: Set/unset off day ───
-router.put('/users/:userId/off-day/:date', requireRole(...adminRoles), async (req, res) => {
+router.put('/users/:userId/off-day/:date', requireRole(...editTimeRoles), async (req, res) => {
   try {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(req.params.date)) {
       return res.status(400).json({ error: 'Invalid date format (YYYY-MM-DD required)' });
@@ -1359,7 +1364,7 @@ router.put('/users/:userId/off-day/:date', requireRole(...adminRoles), async (re
   }
 });
 
-router.delete('/users/:userId/off-day/:date', requireRole(...adminRoles), async (req, res) => {
+router.delete('/users/:userId/off-day/:date', requireRole(...editTimeRoles), async (req, res) => {
   try {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(req.params.date)) {
       return res.status(400).json({ error: 'Invalid date format' });
@@ -1391,7 +1396,7 @@ router.delete('/users/:userId/off-day/:date', requireRole(...adminRoles), async 
 });
 
 // ─── Admin: Restore report-cleared daily progress ───
-router.post('/users/:userId/restore-report/:date', requireRole(...adminRoles), async (req, res) => {
+router.post('/users/:userId/restore-report/:date', requireRole(...editTimeRoles), async (req, res) => {
   try {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(req.params.date)) {
       return res.status(400).json({ error: 'Invalid date format' });

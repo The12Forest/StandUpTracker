@@ -588,7 +588,7 @@ export default function SettingsPage() {
                 { key: 'daily_goal_reached', label: 'Goal Reached', desc: 'When you hit your daily goal' },
                 { key: 'report_warning', label: 'Report Warning', desc: 'When someone reports your timer session' },
                 { key: 'report_cleared', label: 'Report Cleared', desc: 'When your daily progress is cleared due to reports' },
-                ...(user?.role === 'admin' || user?.role === 'super_admin' ? [
+                ...(['manager', 'admin', 'super_admin'].includes(user?.role) ? [
                   { key: 'admin_report_alert', label: 'Admin Report Alert', desc: 'When a user\'s progress is cleared by reports' },
                 ] : []),
               ].map(({ key, label, desc }) => (

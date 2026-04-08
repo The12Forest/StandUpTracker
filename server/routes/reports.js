@@ -137,7 +137,7 @@ router.post('/', async (req, res) => {
       }).catch(() => {});
 
       // Notify all admins
-      const admins = await User.find({ role: { $in: ['admin', 'super_admin'] }, active: true, deletedAt: null });
+      const admins = await User.find({ role: { $in: ['manager', 'admin', 'super_admin'] }, active: true, deletedAt: null });
       for (const admin of admins) {
         const adminNotif = await Notification.create({
           userId: admin.userId,
