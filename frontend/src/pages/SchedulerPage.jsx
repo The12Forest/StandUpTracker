@@ -2,7 +2,6 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { ChevronLeft, ChevronRight, Calendar, Coffee, CoffeeIcon, UsersRound, User, AlertTriangle } from 'lucide-react';
 import { api } from '../lib/api';
 import { BentoCard } from '../components/BentoCard';
-import useAuthStore from '../stores/useAuthStore';
 import useSocketStore from '../stores/useSocketStore';
 import useToastStore from '../stores/useToastStore';
 import useForgottenCheckout from '../hooks/useForgottenCheckout';
@@ -34,14 +33,16 @@ const MEMBER_BORDERS = [
   'border-pink-400',
 ];
 
-function getWeekStart(date, firstDay) {
+/** Format a Date as YYYY-MM-DD in local time (avoids UTC drift from toISOString). */
+function toDateStr(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** Return the Sunday (week start) for the week containing `date`. */
+function getWeekStart(date) {
   const d = new Date(date);
-  const jsDay = d.getDay(); // 0=Sun
-  const offset = firstDay === 'monday'
-    ? (jsDay === 0 ? 6 : jsDay - 1)
-    : jsDay;
-  d.setDate(d.getDate() - offset);
-  return d.toISOString().slice(0, 10);
+  d.setDate(d.getDate() - d.getDay()); // getDay() 0=Sun → subtract 0; 6=Sat → subtract 6
+  return toDateStr(d);
 }
 
 function getWeekDays(weekStart) {
@@ -49,7 +50,7 @@ function getWeekDays(weekStart) {
   for (let i = 0; i < 7; i++) {
     const d = new Date(weekStart + 'T00:00:00');
     d.setDate(d.getDate() + i);
-    days.push(d.toISOString().slice(0, 10));
+    days.push(toDateStr(d));
   }
   return days;
 }
@@ -326,22 +327,15 @@ function GroupCalendar({ weekDays, members, selectedMembers, today }) {
 }
 
 export default function SchedulerPage() {
-  const user = useAuthStore((s) => s.user);
   const socket = useSocketStore((s) => s.socket);
   const toast = useToastStore();
   const { forgotten, check: checkForgotten, finalize, discard } = useForgottenCheckout();
   const [showForgottenModal, setShowForgottenModal] = useState(false);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = toDateStr(new Date());
 
-  // Week state
-  const firstDayOfWeek = user?.firstDayOfWeek ?? 'sunday';
-  const [weekStart, setWeekStart] = useState(() => getWeekStart(new Date(), firstDayOfWeek));
+  // Week state — always Sunday-first
+  const [weekStart, setWeekStart] = useState(() => getWeekStart(new Date()));
   const weekDays = useMemo(() => getWeekDays(weekStart), [weekStart]);
-
-  // Re-align week start when the admin changes the firstDayOfWeek setting
-  useEffect(() => {
-    setWeekStart(getWeekStart(new Date(weekStart + 'T00:00:00'), firstDayOfWeek));
-  }, [firstDayOfWeek]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // View mode
   const [view, setView] = useState('personal'); // 'personal' | 'group'
@@ -427,15 +421,14 @@ export default function SchedulerPage() {
     };
   }, [socket, view, fetchPersonal, fetchGroupData]);
 
-  // Week navigation — always re-snap to the configured first day of week so that
-  // month/year boundary arithmetic can never leave the week start mid-week.
+  // Week navigation — add/subtract 7 days then snap to Sunday
   const navWeek = (dir) => {
     const d = new Date(weekStart + 'T00:00:00');
     d.setDate(d.getDate() + dir * 7);
-    setWeekStart(getWeekStart(d, firstDayOfWeek));
+    setWeekStart(getWeekStart(d));
   };
 
-  const goToday = () => setWeekStart(getWeekStart(new Date(), firstDayOfWeek));
+  const goToday = () => setWeekStart(getWeekStart(new Date()));
 
   // Toggle off day
   const toggleOffDay = async (dateStr) => {
