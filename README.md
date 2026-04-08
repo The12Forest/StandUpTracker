@@ -14,51 +14,6 @@ StandUpTracker helps you build healthy standing habits by tracking your daily st
 | **Optional** | Ollama (for AI advisor), Docker & Compose |
 | **Features** | WebSockets, Service Worker, Web Push, HMAC-SHA256 signing |
 
-## Features
-
-**Core Tracking**
-- ⏱️ Timer with start/stop, daily totals, session history
-- 📊 Activity heatmap (52 weeks), bar charts, daily stats
-- 🎯 Configurable daily goals, per-day goal overrides
-- 🔥 Personal streaks (current & best), streak milestones
-
-**Gamification**
-- 🎮 10-level progression system
-- 🏆 Leaderboard with period filtering (week/month/all-time)
-- 🤝 Friend requests and shared friend streaks
-- 👥 Groups with collective streaks
-
-**Social & Community**
-- 👫 Friend lists with online status
-- 📬 Friend requests and acceptance workflow
-- 👥 Group management and shared goals
-- 🔗 Shared heatmap views with friends
-
-**Real-time & Cross-Device**
-- 🔄 Socket.io WebSocket for instant device sync
-- 📱 PWA installation, offline support via Service Worker
-- 🔔 Web Push notifications
-- ⏱️ NTP-based clock synchronization
-
-**Authentication & Security**
-- 🔐 JWT + HttpOnly cookies, email verification
-- 🔑 TOTP 2FA, email 2FA
-- 🎭 Admin impersonation with audit logging
-- 🚫 Soft-ban system for account suspension
-
-**Admin & Configuration**
-- 📈 Server health dashboard with metrics
-- 👥 User management (roles, suspension, deletion)
-- ⚙️ Global settings (SMTP, JWT secret, feature toggles, AI config)
-- 📋 Audit logs (365-day TTL)
-- 🔄 Streak integrity checks
-
-**Developer Features**
-- 🔑 API Key management (programmatic timer access)
-- 🪝 Webhooks (6 event types, up to 5 per user, HMAC-SHA256 signed)
-- 🛠️ Public API at `/api/v1` (rate-limited 60 req/min per key)
-- 🤖 Optional Ollama-powered AI productivity advisor (per-user opt-in)
-
 ## Quick Start (Docker Compose)
 
 ### Prerequisites
@@ -70,7 +25,7 @@ StandUpTracker helps you build healthy standing habits by tracking your daily st
 docker compose up -d
 ```
 
-The application will be available at **http://localhost:3000**.
+The application will be available at **http://localhost:3000**. __Can be changed laiter.__
 
 **Full `docker-compose.yml`:**
 ```yaml
@@ -122,6 +77,51 @@ After setup completes:
 - **[`docs/API.md`](docs/API.md)** — REST API reference, webhook documentation, and signature verification examples
 - **[`LICENSE`](LICENSE)** — MIT License
 
+## Features
+
+**Core Tracking**
+- ⏱️ Timer with start/stop, daily totals, session history
+- 📊 Activity heatmap (52 weeks), bar charts, daily stats
+- 🎯 Configurable daily goals, per-day goal overrides
+- 🔥 Personal streaks (current & best), streak milestones
+
+**Gamification**
+- 🎮 10-level progression system
+- 🏆 Leaderboard with period filtering (week/month/all-time)
+- 🤝 Friend requests and shared friend streaks
+- 👥 Groups with collective streaks
+
+**Social & Community**
+- 👫 Friend lists with online status
+- 📬 Friend requests and acceptance workflow
+- 👥 Group management and shared goals
+- 🔗 Shared heatmap views with friends
+
+**Real-time & Cross-Device**
+- 🔄 Socket.io WebSocket for instant device sync
+- 📱 PWA installation, offline support via Service Worker
+- 🔔 Web Push notifications
+- ⏱️ NTP-based clock synchronization
+
+**Authentication & Security**
+- 🔐 JWT + HttpOnly cookies, email verification
+- 🔑 TOTP 2FA, email 2FA
+- 🎭 Admin impersonation with audit logging
+- 🚫 Soft-ban system for account suspension
+
+**Admin & Configuration**
+- 📈 Server health dashboard with metrics
+- 👥 User management (roles, suspension, deletion)
+- ⚙️ Global settings (SMTP, JWT secret, feature toggles, AI config)
+- 📋 Audit logs (365-day TTL)
+- 🔄 Streak integrity checks
+
+**Developer Features**
+- 🔑 API Key management (programmatic timer access)
+- 🪝 Webhooks (6 event types, up to 5 per user, HMAC-SHA256 signed)
+- 🛠️ Public API at `/api/v1` (rate-limited 60 req/min per key)
+- 🤖 Optional Ollama-powered AI productivity advisor (per-user opt-in)
+
 ## License
 
-MIT
+[![License: CC BY-NC-SA 4.0](https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc-sa/4.0/)
