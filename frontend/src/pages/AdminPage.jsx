@@ -853,6 +853,9 @@ function SettingsTab() {
     vapidPublicKey: 'Public VAPID key for Web Push. Share this with the browser to establish push subscriptions. Generated automatically via the button above.',
     vapidPrivateKey: 'Private VAPID key used server-side to sign push messages. Keep this secret.',
     vapidContactEmail: 'Contact email included in VAPID headers. Must start with "mailto:". Used by push services to contact the app operator if issues arise.',
+    defaultQuietHoursFrom: 'Default quiet hours start for new users (HH:MM UTC). No notifications are sent during quiet hours. Supports overnight ranges (e.g. 22:00–07:00). Existing users are not affected.',
+    defaultQuietHoursUntil: 'Default quiet hours end for new users (HH:MM UTC). Overnight ranges wrap across midnight. Existing users are not affected.',
+    defaultMaxNotificationsPerDay: 'Default maximum notifications per day for new users. Critical alerts (report cleared, admin report alert) always bypass this limit. Options: 1, 2, 3, 5, 10, 0 for unlimited. Existing users are not affected.',
   };
 
   // Group settings by section

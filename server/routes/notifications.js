@@ -136,7 +136,7 @@ router.post('/push/unsubscribe', async (req, res) => {
 // Update push notification preferences
 router.put('/push/preferences', async (req, res) => {
   try {
-    const { pushPreferences, standupReminderTime } = req.body;
+    const { pushPreferences, standupReminderTime, quietHoursFrom, quietHoursUntil, maxNotificationsPerDay } = req.body;
     const update = {};
 
     if (pushPreferences && typeof pushPreferences === 'object') {
@@ -152,6 +152,28 @@ router.put('/push/preferences', async (req, res) => {
       const [h, m] = standupReminderTime.split(':').map(Number);
       if (h >= 0 && h <= 23 && m >= 0 && m <= 59) {
         update.standupReminderTime = standupReminderTime;
+      }
+    }
+
+    // Quiet hours (HH:MM format)
+    if (quietHoursFrom && /^\d{2}:\d{2}$/.test(quietHoursFrom)) {
+      const [h, m] = quietHoursFrom.split(':').map(Number);
+      if (h >= 0 && h <= 23 && m >= 0 && m <= 59) {
+        update.quietHoursFrom = quietHoursFrom;
+      }
+    }
+    if (quietHoursUntil && /^\d{2}:\d{2}$/.test(quietHoursUntil)) {
+      const [h, m] = quietHoursUntil.split(':').map(Number);
+      if (h >= 0 && h <= 23 && m >= 0 && m <= 59) {
+        update.quietHoursUntil = quietHoursUntil;
+      }
+    }
+
+    // Max notifications per day (allowed values: 1, 2, 3, 5, 10, 0 = unlimited)
+    if (maxNotificationsPerDay !== undefined) {
+      const val = Number(maxNotificationsPerDay);
+      if ([0, 1, 2, 3, 5, 10].includes(val)) {
+        update.maxNotificationsPerDay = val;
       }
     }
 

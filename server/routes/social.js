@@ -11,6 +11,7 @@ const OffDay = require('../models/OffDay');
 const { getEffectiveGoalMinutes } = require('../utils/settings');
 const { sendPushNotification } = require('../utils/pushSender');
 const { dispatchWebhook } = require('../utils/webhookDispatch');
+const { shouldDispatchNotification, incrementNotificationCount } = require('../utils/notificationGate');
 
 const router = express.Router();
 
@@ -103,19 +104,22 @@ router.post('/request', requireVerified, async (req, res) => {
       requestId: friendship._id,
     });
 
-    // Persist notification
-    const notif = await Notification.create({
-      userId: target.userId,
-      type: 'friend_request',
-      title: 'New Friend Request',
-      message: `${req.user.username} sent you a friend request.`,
-      data: { fromUserId: req.user.userId, fromUsername: req.user.username },
-    });
-    io.to(`user:${target.userId}`).emit('NOTIFICATION', notif.toObject());
-    sendPushNotification(target.userId, 'friend_request', {
-      title: 'StandUpTracker',
-      body: notif.message,
-    }).catch(() => {});
+    // Persist notification (gated by quiet hours + daily limit)
+    if (await shouldDispatchNotification(target.userId, 'friend_request')) {
+      const notif = await Notification.create({
+        userId: target.userId,
+        type: 'friend_request',
+        title: 'New Friend Request',
+        message: `${req.user.username} sent you a friend request.`,
+        data: { fromUserId: req.user.userId, fromUsername: req.user.username },
+      });
+      await incrementNotificationCount(target.userId);
+      io.to(`user:${target.userId}`).emit('NOTIFICATION', notif.toObject());
+      sendPushNotification(target.userId, 'friend_request', {
+        title: 'StandUpTracker',
+        body: notif.message,
+      }).catch(() => {});
+    }
 
     // Webhook: friend_request.received (fires for the recipient)
     dispatchWebhook(target.userId, 'friend_request.received', {
@@ -199,14 +203,17 @@ router.post('/accept/:requestId', async (req, res) => {
     });
 
     // Create persistent notification so offline requesters don't miss the acceptance
-    const notif = await Notification.create({
-      userId: friendship.requester,
-      type: 'friend_request_accepted',
-      title: 'Friend Request Accepted',
-      message: `${req.user.username} accepted your friend request.`,
-      data: { fromUserId: req.user.userId, fromUsername: req.user.username },
-    });
-    io.to(`user:${friendship.requester}`).emit('NOTIFICATION', notif.toObject());
+    if (await shouldDispatchNotification(friendship.requester, 'friend_request_accepted')) {
+      const notif = await Notification.create({
+        userId: friendship.requester,
+        type: 'friend_request_accepted',
+        title: 'Friend Request Accepted',
+        message: `${req.user.username} accepted your friend request.`,
+        data: { fromUserId: req.user.userId, fromUsername: req.user.username },
+      });
+      await incrementNotificationCount(friendship.requester);
+      io.to(`user:${friendship.requester}`).emit('NOTIFICATION', notif.toObject());
+    }
 
     // Emit FRIEND_ACCEPTED for real-time friends list refresh on the requester side
     io.to(`user:${friendship.requester}`).emit('FRIEND_ACCEPTED', {

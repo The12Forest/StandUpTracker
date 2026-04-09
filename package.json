@@ -1,6 +1,6 @@
 {
   "name": "standuptracker",
-  "version": "2.0.0",
+  "version": "1.0.19.2",
   "description": "A real-time multi-device standing time tracker with gamification, WebSocket sync, and admin dashboard",
   "main": "server/index.js",
   "scripts": {

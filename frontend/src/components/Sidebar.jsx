@@ -1,8 +1,9 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import { Timer, BarChart3, Trophy, Settings, Shield, LogOut, Menu, X, Users, UsersRound, Flame, CalendarDays } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import useAuthStore from '../stores/useAuthStore';
 import useSocketStore from '../stores/useSocketStore';
+import { api } from '../lib/api';
 
 const NAV_ITEMS = [
   { to: '/app', icon: Timer, label: 'Timer' },
@@ -23,7 +24,12 @@ export default function Sidebar() {
   const connected = useSocketStore((s) => s.connected);
   const navigate = useNavigate();
 
+  const [version, setVersion] = useState('');
   const isAdmin = user && ['manager', 'admin', 'super_admin'].includes(user.role);
+
+  useEffect(() => {
+    api('/api/health').then(d => setVersion(d.version || '')).catch(() => {});
+  }, []);
 
   const handleLogout = () => {
     disconnect();
@@ -111,6 +117,9 @@ export default function Sidebar() {
             <LogOut size={14} />
             Sign Out
           </button>
+          {version && (
+            <p className="text-[10px] text-zen-600 text-center mt-2">v{version}</p>
+          )}
         </div>
       </aside>
     </>

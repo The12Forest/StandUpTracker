@@ -5,8 +5,7 @@ const useAuthStore = create((set, get) => ({
   user: null,
   loading: true,
   error: null,
-  // Impersonation
-  originalToken: null,
+  // Impersonation (detected from server response)
   isImpersonating: false,
 
   init: async (retryCount = 0) => {
@@ -15,10 +14,9 @@ const useAuthStore = create((set, get) => ({
     try {
       const data = await api('/api/auth/me');
       if (data.token) setToken(data.token);
-      // Restore impersonation state from sessionStorage (survives tab reload, not tab close)
-      const isImpersonating = sessionStorage.getItem('sut_isImpersonating') === 'true';
-      const originalToken = sessionStorage.getItem('sut_originalToken') || null;
-      set({ user: data.user, loading: false, isImpersonating, originalToken });
+      // Detect impersonation from server response (impersonator field set when session is impersonation)
+      const isImpersonating = !!data.user?.impersonator;
+      set({ user: data.user, loading: false, isImpersonating });
     } catch (err) {
       // Only log the user out on genuine auth failures (401 / isAuthError).
       // Transient server errors (503, 500) or network failures should retry
@@ -79,9 +77,7 @@ const useAuthStore = create((set, get) => ({
     // Clear server-side session + cookie
     try { await api('/api/auth/logout', { method: 'POST' }); } catch { /* ignore */ }
     clearToken();
-    sessionStorage.removeItem('sut_originalToken');
-    sessionStorage.removeItem('sut_isImpersonating');
-    set({ user: null, originalToken: null, isImpersonating: false });
+    set({ user: null, isImpersonating: false });
   },
 
   updateProfile: async (updates) => {
@@ -107,46 +103,26 @@ const useAuthStore = create((set, get) => ({
     } catch { /* ignore */ }
   },
 
-  // Impersonation
+  // Impersonation — server manages session cookies (sut_session + impersonator_token)
   startImpersonation: async (userId) => {
     const data = await api(`/api/admin/impersonate/${userId}`, { method: 'POST' });
-    // Save admin's session token to sessionStorage (survives page reload but not browser close)
-    const { getToken } = await import('../lib/api');
-    const currentToken = getToken();
-    sessionStorage.setItem('sut_originalToken', currentToken);
-    sessionStorage.setItem('sut_isImpersonating', 'true');
-    // Set the impersonation token as current
+    // Server sets impersonator_token cookie (admin's session) and sut_session cookie (impersonation session)
+    // Store the impersonation token in memory for socket auth
     setToken(data.token);
-    set({ user: data.user, originalToken: currentToken, isImpersonating: true });
+    set({ user: data.user, isImpersonating: true });
     // Fetch full profile for impersonated user (response only contains basic fields)
     await get().refreshUser();
   },
 
   endImpersonation: async () => {
-    const orig = get().originalToken || sessionStorage.getItem('sut_originalToken');
-
-    // Best-effort server-side cleanup — cookie will be cleared by server
+    // Server restores admin's session cookie from impersonator_token and clears impersonator_token
     try {
-      await fetch('/api/admin/impersonate/end', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-      });
+      await api('/api/admin/impersonate/end', { method: 'POST' });
     } catch { /* ignore */ }
 
-    // Clear impersonation state
-    sessionStorage.removeItem('sut_originalToken');
-    sessionStorage.removeItem('sut_isImpersonating');
-
-    if (orig) {
-      setToken(orig);
-      set({ originalToken: null, isImpersonating: false });
-      await get().refreshUser();
-    } else {
-      // No original token — fall back to logout
-      clearToken();
-      set({ user: null, originalToken: null, isImpersonating: false });
-    }
+    set({ isImpersonating: false });
+    // Refresh user — the server has restored the admin's session cookie
+    await get().refreshUser();
   },
 }));
 

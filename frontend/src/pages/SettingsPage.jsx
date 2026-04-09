@@ -39,6 +39,9 @@ export default function SettingsPage() {
     admin_report_alert: true,
   });
   const [reminderTime, setReminderTime] = useState('12:00');
+  const [quietFrom, setQuietFrom] = useState('22:00');
+  const [quietUntil, setQuietUntil] = useState('07:00');
+  const [maxNotifsPerDay, setMaxNotifsPerDay] = useState(3);
   const [goalError, setGoalError] = useState('');
   const [newUsername, setNewUsername] = useState('');
   const [usernameError, setUsernameError] = useState('');
@@ -76,6 +79,9 @@ export default function SettingsPage() {
         setPushPrefs(prev => ({ ...prev, ...user.pushPreferences }));
       }
       setReminderTime(user.standupReminderTime || '12:00');
+      setQuietFrom(user.quietHoursFrom || '22:00');
+      setQuietUntil(user.quietHoursUntil || '07:00');
+      setMaxNotifsPerDay(user.maxNotificationsPerDay ?? 3);
     }
   }, [user]);
 
@@ -244,13 +250,16 @@ export default function SettingsPage() {
     setPushLoading(false);
   }, [pushEnabled, refreshUser, toast]);
 
-  const savePushPrefs = useCallback(async (newPrefs, newTime) => {
+  const savePushPrefs = useCallback(async (newPrefs, newTime, qFrom, qUntil, maxNotifs) => {
     try {
       await api('/api/notifications/push/preferences', {
         method: 'PUT',
         body: JSON.stringify({
           pushPreferences: newPrefs,
           standupReminderTime: newTime,
+          quietHoursFrom: qFrom,
+          quietHoursUntil: qUntil,
+          maxNotificationsPerDay: maxNotifs,
         }),
       });
     } catch { /* silent save */ }
@@ -259,15 +268,26 @@ export default function SettingsPage() {
   const togglePushPref = useCallback((key) => {
     setPushPrefs(prev => {
       const updated = { ...prev, [key]: !prev[key] };
-      savePushPrefs(updated, reminderTime);
+      savePushPrefs(updated, reminderTime, quietFrom, quietUntil, maxNotifsPerDay);
       return updated;
     });
-  }, [savePushPrefs, reminderTime]);
+  }, [savePushPrefs, reminderTime, quietFrom, quietUntil, maxNotifsPerDay]);
 
-  const handleReminderTimeChange = useCallback((value) => {
-    setReminderTime(value);
-    savePushPrefs(pushPrefs, value);
-  }, [savePushPrefs, pushPrefs]);
+  const handleQuietFromChange = useCallback((value) => {
+    setQuietFrom(value);
+    savePushPrefs(pushPrefs, reminderTime, value, quietUntil, maxNotifsPerDay);
+  }, [savePushPrefs, pushPrefs, reminderTime, quietUntil, maxNotifsPerDay]);
+
+  const handleQuietUntilChange = useCallback((value) => {
+    setQuietUntil(value);
+    savePushPrefs(pushPrefs, reminderTime, quietFrom, value, maxNotifsPerDay);
+  }, [savePushPrefs, pushPrefs, reminderTime, quietFrom, maxNotifsPerDay]);
+
+  const handleMaxNotifsChange = useCallback((value) => {
+    const val = Number(value);
+    setMaxNotifsPerDay(val);
+    savePushPrefs(pushPrefs, reminderTime, quietFrom, quietUntil, val);
+  }, [savePushPrefs, pushPrefs, reminderTime, quietFrom, quietUntil]);
 
   const toggleEmail2FA = async () => {
     if (!showEmail2faPrompt) { setShowEmail2faPrompt(true); return; }
@@ -606,21 +626,55 @@ export default function SettingsPage() {
                 </div>
               ))}
 
-              {/* Standup reminder time — only visible when standup_reminder is enabled */}
-              {pushPrefs.standup_reminder && (
-                <div className="flex items-center justify-between py-1 pl-4 border-l-2 border-accent-500/30">
-                  <div>
-                    <p className="text-sm text-zen-300 flex items-center gap-1"><Clock size={12} /> Reminder Time (UTC)</p>
-                    <p className="text-[10px] text-zen-600">When to send the daily standup reminder</p>
+              {/* Quiet Hours */}
+              <div className="border-t border-zen-700/30 pt-3 mt-2">
+                <p className="text-xs text-zen-500 font-medium mb-2 flex items-center gap-1"><Clock size={12} /> Quiet Hours (UTC)</p>
+                <p className="text-[10px] text-zen-600 mb-2">No notifications will be sent during this window. Supports overnight ranges (e.g. 22:00–07:00).</p>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1">
+                    <label className="text-[10px] text-zen-600 block mb-0.5">From</label>
+                    <input
+                      type="time"
+                      value={quietFrom}
+                      onChange={(e) => handleQuietFromChange(e.target.value)}
+                      className="glass-input w-full text-sm text-center"
+                    />
                   </div>
-                  <input
-                    type="time"
-                    value={reminderTime}
-                    onChange={(e) => handleReminderTimeChange(e.target.value)}
-                    className="glass-input w-28 text-sm text-center"
-                  />
+                  <span className="text-zen-500 mt-4">–</span>
+                  <div className="flex-1">
+                    <label className="text-[10px] text-zen-600 block mb-0.5">Until</label>
+                    <input
+                      type="time"
+                      value={quietUntil}
+                      onChange={(e) => handleQuietUntilChange(e.target.value)}
+                      className="glass-input w-full text-sm text-center"
+                    />
+                  </div>
                 </div>
-              )}
+                {quietFrom === quietUntil && (
+                  <p className="text-[10px] text-warn-400 mt-1">From and Until are the same — all notifications are suppressed.</p>
+                )}
+              </div>
+
+              {/* Max Notifications Per Day */}
+              <div className="flex items-center justify-between py-1">
+                <div>
+                  <p className="text-sm text-zen-300">Max Notifications Per Day</p>
+                  <p className="text-[10px] text-zen-600">Limit daily notification volume (critical alerts always bypass)</p>
+                </div>
+                <select
+                  value={maxNotifsPerDay}
+                  onChange={(e) => handleMaxNotifsChange(e.target.value)}
+                  className="glass-input w-28 text-sm text-center"
+                >
+                  <option value={1}>1</option>
+                  <option value={2}>2</option>
+                  <option value={3}>3</option>
+                  <option value={5}>5</option>
+                  <option value={10}>10</option>
+                  <option value={0}>Unlimited</option>
+                </select>
+              </div>
             </div>
           )}
         </div>

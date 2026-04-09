@@ -155,10 +155,12 @@ router.post('/advice', authenticate, softBanCheck, requireVerified, aiGateCheck,
     const goalMinutes = await getEffectiveGoalMinutes(req.user);
     const daysMetGoal = dailyData.filter(d => d.minutes >= goalMinutes).length;
 
-    // System prompt: admin default > built-in
+    // System prompt: admin default > built-in, then append language instruction
     const adminSystemPrompt = await Settings.get('defaultAiSystemPrompt') || '';
     const builtInSystemPrompt = `You are a productivity coach for a standing desk tracker app called StandUpTracker. Be encouraging but honest. Keep response under 150 words. Use simple language. Use markdown formatting for readability.`;
-    const systemPrompt = adminSystemPrompt || builtInSystemPrompt;
+    const basePrompt = adminSystemPrompt || builtInSystemPrompt;
+    const userLang = req.user.aiLanguage || 'English';
+    const systemPrompt = `${basePrompt}\n\nRespond exclusively in ${userLang}. Do not use any other language in your response.`;
 
     // Max tokens: admin default > 500
     const adminMaxTokens = await Settings.get('defaultAiMaxTokens') || 500;

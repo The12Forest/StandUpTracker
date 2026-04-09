@@ -14,6 +14,7 @@ const { getEffectiveGoalMinutes } = require('../utils/settings');
 const { checkAndSetGoalMet } = require('../utils/streaks');
 const { recalcUserStats } = require('../utils/recalcStats');
 const { sendPushNotification } = require('../utils/pushSender');
+const { shouldDispatchNotification, incrementNotificationCount } = require('../utils/notificationGate');
 const logger = require('../utils/logger');
 
 const router = express.Router();
@@ -170,24 +171,26 @@ router.get('/timer/stop', async (req, res) => {
         io.to(`friends:${userId}`).emit('FRIEND_STATS_UPDATE', { userId });
 
         // Level up notification
-        if (stats.level > oldLevel) {
+        if (stats.level > oldLevel && await shouldDispatchNotification(userId, 'level_up')) {
           const titles = ['', 'Beginner', 'Starter', 'Regular', 'Dedicated', 'Veteran', 'Champion', 'Legend', 'Titan', 'Mythic', 'Eternal'];
           const notif = await Notification.create({
             userId, type: 'level_up', title: 'Level Up!',
             message: `You reached Level ${stats.level} — ${titles[stats.level] || 'Master'}!`,
             data: { level: stats.level },
           });
+          await incrementNotificationCount(userId);
           io.to(`user:${userId}`).emit('NOTIFICATION', notif.toObject());
           sendPushNotification(userId, 'level_up', { title: 'StandUpTracker', body: notif.message }).catch(() => {});
         }
 
         // Goal reached notification
-        if (goalReachedNow) {
+        if (goalReachedNow && await shouldDispatchNotification(userId, 'daily_goal_reached')) {
           const notif = await Notification.create({
             userId, type: 'daily_goal_reached', title: 'Daily Goal Reached!',
             message: `You hit your ${Math.round(todayGoalSeconds / 60)}-minute daily goal. Great work!`,
             data: { minutes: Math.round(todayGoalSeconds / 60) },
           });
+          await incrementNotificationCount(userId);
           io.to(`user:${userId}`).emit('NOTIFICATION', notif.toObject());
           sendPushNotification(userId, 'daily_goal_reached', { title: 'StandUpTracker', body: notif.message }).catch(() => {});
         }

@@ -124,7 +124,7 @@ spaPages.forEach(route => {
 
 // Health check
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', uptime: process.uptime() });
+  res.json({ status: 'ok', uptime: process.uptime(), version: process.env.APP_VERSION || 'dev' });
 });
 
 // WebSocket

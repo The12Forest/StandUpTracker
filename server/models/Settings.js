@@ -69,6 +69,11 @@ const DEFAULTS = {
   enforceDailyGoal: { value: false, description: 'Lock the daily goal for all users to the master value', section: 'enforcement' },
   enforce2fa: { value: false, description: 'Require all users to enable two-factor authentication', section: 'enforcement' },
 
+  // Notification Defaults
+  defaultQuietHoursFrom: { value: '22:00', description: 'Default quiet hours start for new users (HH:MM UTC). No notifications during quiet hours.', section: 'push' },
+  defaultQuietHoursUntil: { value: '07:00', description: 'Default quiet hours end for new users (HH:MM UTC). Overnight ranges (e.g. 22:00–07:00) wrap across midnight.', section: 'push' },
+  defaultMaxNotificationsPerDay: { value: 3, description: 'Default max notifications per day for new users. Critical alerts (report cleared) always bypass this limit. Options: 1, 2, 3, 5, 10, 0 for unlimited.', section: 'push' },
+
   // Push Notifications (VAPID)
   vapidPublicKey: { value: '', description: 'VAPID public key for Web Push notifications', section: 'push' },
   vapidPrivateKey: { value: '', description: 'VAPID private key for Web Push notifications (keep secret)', section: 'push' },

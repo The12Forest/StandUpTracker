@@ -10,6 +10,7 @@ const { getSetting } = require('../utils/settings');
 const { recalcUserStats } = require('../utils/recalcStats');
 const { checkAndSetGoalMet } = require('../utils/streaks');
 const { sendPushNotification } = require('../utils/pushSender');
+const { shouldDispatchNotification, incrementNotificationCount } = require('../utils/notificationGate');
 const logger = require('../utils/logger');
 
 const router = express.Router();
@@ -71,20 +72,23 @@ router.post('/', async (req, res) => {
     const sessionReportCount = await Report.countDocuments({ targetUserId, sessionId });
     const threshold = await getSetting('reportThreshold') || 3;
 
-    // Notify the target user (report warning)
+    // Notify the target user (report warning — gated)
     const io = req.app.get('io');
-    const warningNotif = await Notification.create({
-      userId: targetUserId,
-      type: 'report_warning',
-      title: 'Timer Session Reported',
-      message: `Your timer session has been reported. Report ${sessionReportCount} of ${threshold} — if ${threshold} reports are received your daily progress will be cleared.`,
-      data: { reportCount: sessionReportCount, threshold, sessionId },
-    });
-    if (io) io.to(`user:${targetUserId}`).emit('NOTIFICATION', warningNotif.toObject());
-    sendPushNotification(targetUserId, 'report_warning', {
-      title: 'StandUpTracker',
-      body: warningNotif.message,
-    }).catch(() => {});
+    if (await shouldDispatchNotification(targetUserId, 'report_warning')) {
+      const warningNotif = await Notification.create({
+        userId: targetUserId,
+        type: 'report_warning',
+        title: 'Timer Session Reported',
+        message: `Your timer session has been reported. Report ${sessionReportCount} of ${threshold} — if ${threshold} reports are received your daily progress will be cleared.`,
+        data: { reportCount: sessionReportCount, threshold, sessionId },
+      });
+      await incrementNotificationCount(targetUserId);
+      if (io) io.to(`user:${targetUserId}`).emit('NOTIFICATION', warningNotif.toObject());
+      sendPushNotification(targetUserId, 'report_warning', {
+        title: 'StandUpTracker',
+        body: warningNotif.message,
+      }).catch(() => {});
+    }
 
     // Check if threshold reached
     if (sessionReportCount >= threshold) {
@@ -122,35 +126,41 @@ router.post('/', async (req, res) => {
         }
       }
 
-      // Notify target: progress cleared
-      const clearedNotif = await Notification.create({
-        userId: targetUserId,
-        type: 'report_cleared',
-        title: 'Daily Progress Cleared',
-        message: 'Your daily progress has been cleared due to multiple reports.',
-        data: { reportCount: sessionReportCount, date: today },
-      });
-      if (io) io.to(`user:${targetUserId}`).emit('NOTIFICATION', clearedNotif.toObject());
-      sendPushNotification(targetUserId, 'report_cleared', {
-        title: 'StandUpTracker',
-        body: clearedNotif.message,
-      }).catch(() => {});
+      // Notify target: progress cleared (CRITICAL — bypasses daily limit, still respects quiet hours)
+      if (await shouldDispatchNotification(targetUserId, 'report_cleared')) {
+        const clearedNotif = await Notification.create({
+          userId: targetUserId,
+          type: 'report_cleared',
+          title: 'Daily Progress Cleared',
+          message: 'Your daily progress has been cleared due to multiple reports.',
+          data: { reportCount: sessionReportCount, date: today },
+        });
+        await incrementNotificationCount(targetUserId);
+        if (io) io.to(`user:${targetUserId}`).emit('NOTIFICATION', clearedNotif.toObject());
+        sendPushNotification(targetUserId, 'report_cleared', {
+          title: 'StandUpTracker',
+          body: clearedNotif.message,
+        }).catch(() => {});
+      }
 
-      // Notify all admins
+      // Notify all admins (CRITICAL — bypasses daily limit, still respects quiet hours)
       const admins = await User.find({ role: { $in: ['manager', 'admin', 'super_admin'] }, active: true, deletedAt: null });
       for (const admin of admins) {
-        const adminNotif = await Notification.create({
-          userId: admin.userId,
-          type: 'admin_report_alert',
-          title: 'Report Threshold Reached',
-          message: `User ${target.username} has had their daily progress cleared after receiving ${sessionReportCount} reports.`,
-          data: { targetUserId, targetUsername: target.username, reportCount: sessionReportCount, date: today },
-        });
-        if (io) io.to(`user:${admin.userId}`).emit('NOTIFICATION', adminNotif.toObject());
-        sendPushNotification(admin.userId, 'admin_report_alert', {
-          title: 'StandUpTracker',
-          body: adminNotif.message,
-        }).catch(() => {});
+        if (await shouldDispatchNotification(admin.userId, 'admin_report_alert')) {
+          const adminNotif = await Notification.create({
+            userId: admin.userId,
+            type: 'admin_report_alert',
+            title: 'Report Threshold Reached',
+            message: `User ${target.username} has had their daily progress cleared after receiving ${sessionReportCount} reports.`,
+            data: { targetUserId, targetUsername: target.username, reportCount: sessionReportCount, date: today },
+          });
+          await incrementNotificationCount(admin.userId);
+          if (io) io.to(`user:${admin.userId}`).emit('NOTIFICATION', adminNotif.toObject());
+          sendPushNotification(admin.userId, 'admin_report_alert', {
+            title: 'StandUpTracker',
+            body: adminNotif.message,
+          }).catch(() => {});
+        }
       }
 
       logger.info(`Daily progress cleared for ${target.username} after ${sessionReportCount} reports`, { source: 'reports' });

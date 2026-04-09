@@ -1,4 +1,4 @@
-import { Outlet, Navigate } from 'react-router-dom';
+import { Outlet, Navigate, useNavigate } from 'react-router-dom';
 import useAuthStore from '../stores/useAuthStore';
 import Sidebar from './Sidebar';
 import NotificationBell from './NotificationBell';
@@ -8,6 +8,12 @@ export default function AppLayout() {
   const loading = useAuthStore((s) => s.loading);
   const isImpersonating = useAuthStore((s) => s.isImpersonating);
   const endImpersonation = useAuthStore((s) => s.endImpersonation);
+  const navigate = useNavigate();
+
+  const handleEndImpersonation = async () => {
+    await endImpersonation();
+    navigate('/admin?tab=users');
+  };
 
   if (loading) {
     return (
@@ -28,7 +34,7 @@ export default function AppLayout() {
             <span className="text-sm text-warn-400">
               Viewing as <strong className="text-warn-300">{user.username}</strong> (impersonation mode)
             </span>
-            <button onClick={endImpersonation} className="text-xs bg-warn-500/30 hover:bg-warn-500/40 text-warn-300 px-3 py-1 rounded-lg transition-colors">
+            <button onClick={handleEndImpersonation} className="text-xs bg-warn-500/30 hover:bg-warn-500/40 text-warn-300 px-3 py-1 rounded-lg transition-colors">
               End Impersonation
             </button>
           </div>

@@ -12,12 +12,15 @@ function getTokenFromRequest(req) {
   if (header && header.startsWith('Bearer ')) {
     return header.slice(7);
   }
+  return getCookieValue(req, 'sut_session');
+}
+
+/** Extract a named cookie from the raw cookie header */
+function getCookieValue(req, name) {
   const cookies = req.headers.cookie;
-  if (cookies) {
-    const match = cookies.split(';').map(c => c.trim()).find(c => c.startsWith('sut_session='));
-    if (match) return match.split('=').slice(1).join('=');
-  }
-  return null;
+  if (!cookies) return null;
+  const match = cookies.split(';').map(c => c.trim()).find(c => c.startsWith(name + '='));
+  return match ? match.split('=').slice(1).join('=') : null;
 }
 
 /**
@@ -32,22 +35,47 @@ async function authenticate(req, res, next) {
   }
 
   try {
-    const session = await Session.findOne({ sessionId: token });
-    if (!session) {
-      res.clearCookie('sut_session', { path: '/' });
-      return res.status(401).json({ error: 'Invalid or expired session', sessionExpired: true });
-    }
+    let session = await Session.findOne({ sessionId: token });
 
-    if (session.expiresAt < new Date()) {
-      await Session.deleteOne({ sessionId: token });
-      res.clearCookie('sut_session', { path: '/' });
+    // If the session is gone or expired, check for impersonator_token to auto-restore admin
+    if (!session || session.expiresAt < new Date()) {
+      if (session) await Session.deleteOne({ sessionId: token });
+
+      const impersonatorToken = getCookieValue(req, 'impersonator_token');
+      if (impersonatorToken) {
+        const adminSession = await Session.findOne({ sessionId: impersonatorToken, expiresAt: { $gt: new Date() } });
+        if (adminSession) {
+          // Auto-restore admin session: swap cookies and signal the client
+          const { getAppConfig } = require('../utils/settings');
+          const { sessionSecure } = await getAppConfig();
+          const remainingMs = adminSession.expiresAt.getTime() - Date.now();
+          res.cookie('sut_session', impersonatorToken, {
+            httpOnly: true, secure: sessionSecure, sameSite: 'lax', path: '/',
+            maxAge: Math.max(remainingMs, 0),
+          });
+          res.clearCookie('impersonator_token', { httpOnly: true, sameSite: 'strict', path: '/' });
+          // Also clear impersonatedBy on the target user if we can find them
+          if (session?.isImpersonation && session.userId) {
+            User.updateOne({ userId: session.userId }, { $unset: { impersonatedBy: 1 } }).catch(() => {});
+          }
+          return res.status(401).json({
+            error: 'Impersonation session expired. Your admin session has been restored.',
+            impersonationExpired: true,
+            sessionExpired: true,
+          });
+        }
+        // Admin session also expired — clear both cookies
+        res.clearCookie('impersonator_token', { httpOnly: true, sameSite: 'strict', path: '/' });
+      }
+
+      res.clearCookie('sut_session', { httpOnly: true, sameSite: 'lax', path: '/' });
       return res.status(401).json({ error: 'Your session has expired. Please log in again.', sessionExpired: true });
     }
 
     const user = await User.findOne({ userId: session.userId, active: true });
     if (!user) {
       await Session.deleteOne({ sessionId: token });
-      res.clearCookie('sut_session', { path: '/' });
+      res.clearCookie('sut_session', { httpOnly: true, sameSite: 'lax', path: '/' });
       return res.status(401).json({ error: 'User not found or deactivated' });
     }
 

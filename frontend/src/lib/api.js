@@ -12,6 +12,13 @@ export async function api(path, options = {}) {
   if (res.status === 401) {
     _sessionToken = null;
     const data = await res.json().catch(() => ({}));
+    // If impersonation expired, the server has already restored the admin session cookie.
+    // Reload the page to pick up the restored admin session.
+    if (data.impersonationExpired) {
+      window.location.href = '/admin?tab=users';
+      // Return a never-resolving promise to prevent further execution during redirect
+      return new Promise(() => {});
+    }
     // Don't redirect if already on login/register/setup pages or if this is the /me check
     const onPublicPage = ['/login', '/register', '/setup'].some(p => window.location.pathname.startsWith(p));
     const isAuthCheck = path === '/api/auth/me';

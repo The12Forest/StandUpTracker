@@ -9,6 +9,7 @@ const { checkAndSetGoalMet } = require('../utils/streaks');
 const { getEffectiveGoalMinutes, getSetting, getMinActivityThresholdSeconds } = require('../utils/settings');
 const { recalcUserStats } = require('../utils/recalcStats');
 const { sendPushNotification } = require('../utils/pushSender');
+const { shouldDispatchNotification, incrementNotificationCount } = require('../utils/notificationGate');
 const AuditLog = require('../models/AuditLog');
 const Settings = require('../models/Settings');
 
@@ -104,7 +105,7 @@ router.post('/timer/stop', requireVerified, currentDayGuard, async (req, res) =>
       io.to(`friends:${req.user.userId}`).emit('FRIEND_STATS_UPDATE', { userId: req.user.userId });
 
       // Level up notification
-      if (stats.level > oldLevel) {
+      if (stats.level > oldLevel && await shouldDispatchNotification(req.user.userId, 'level_up')) {
         const titles = ['', 'Beginner', 'Starter', 'Regular', 'Dedicated', 'Veteran', 'Champion', 'Legend', 'Titan', 'Mythic', 'Eternal'];
         const notif = await Notification.create({
           userId: req.user.userId,
@@ -113,6 +114,7 @@ router.post('/timer/stop', requireVerified, currentDayGuard, async (req, res) =>
           message: `You reached Level ${stats.level} — ${titles[stats.level] || 'Master'}!`,
           data: { level: stats.level },
         });
+        await incrementNotificationCount(req.user.userId);
         io.to(`user:${req.user.userId}`).emit('NOTIFICATION', notif.toObject());
         sendPushNotification(req.user.userId, 'level_up', {
           title: 'StandUpTracker',
@@ -121,7 +123,7 @@ router.post('/timer/stop', requireVerified, currentDayGuard, async (req, res) =>
       }
 
       // Daily goal reached notification
-      if (goalReachedNow) {
+      if (goalReachedNow && await shouldDispatchNotification(req.user.userId, 'daily_goal_reached')) {
         const notif = await Notification.create({
           userId: req.user.userId,
           type: 'daily_goal_reached',
@@ -129,6 +131,7 @@ router.post('/timer/stop', requireVerified, currentDayGuard, async (req, res) =>
           message: `You hit your ${Math.round(todayGoalSeconds / 60)}-minute daily goal. Great work!`,
           data: { minutes: Math.round(todayGoalSeconds / 60) },
         });
+        await incrementNotificationCount(req.user.userId);
         io.to(`user:${req.user.userId}`).emit('NOTIFICATION', notif.toObject());
         sendPushNotification(req.user.userId, 'daily_goal_reached', {
           title: 'StandUpTracker',

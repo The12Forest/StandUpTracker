@@ -31,6 +31,7 @@ const userSchema = new mongoose.Schema({
   lastActiveAt: Date,
   blockedUntil: Date,
   geminiOptIn: { type: Boolean, default: false },
+  aiLanguage: { type: String, default: 'English' },
   canChangeUsername: { type: Boolean, default: true },
   deletedAt: { type: Date, default: null },
   originalUsername: { type: String, default: null },
@@ -47,7 +48,13 @@ const userSchema = new mongoose.Schema({
     report_cleared: { type: Boolean, default: true },
     admin_report_alert: { type: Boolean, default: true },
   },
-  standupReminderTime: { type: String, default: '12:00' }, // HH:MM in UTC
+  standupReminderTime: { type: String, default: '12:00' }, // HH:MM in UTC (legacy, kept for compat)
+  // Quiet hours — no notifications dispatched during this window
+  quietHoursFrom: { type: String, default: '22:00' }, // HH:MM in UTC
+  quietHoursUntil: { type: String, default: '07:00' }, // HH:MM in UTC
+  maxNotificationsPerDay: { type: Number, default: 3 },
+  notificationCountToday: { type: Number, default: 0 },
+  notificationCountDate: { type: String, default: '' }, // YYYY-MM-DD, resets daily
   // Active timer (server-authoritative)
   timerRunning: { type: Boolean, default: false },
   timerStartedAt: { type: Date, default: null },

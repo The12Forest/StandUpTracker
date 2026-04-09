@@ -8,6 +8,7 @@ const { getEffectiveGoalMinutes, isOffDay } = require('./settings');
 const logger = require('./logger');
 const { sendPushNotification } = require('./pushSender');
 const { dispatchWebhook } = require('./webhookDispatch');
+const { resetDailyNotificationCounts, shouldDispatchNotification, incrementNotificationCount } = require('./notificationGate');
 
 // ─── Helpers ───
 
@@ -160,12 +161,13 @@ async function recalcPersonalStreak(userId, io) {
       dispatchWebhook(userId, 'streak.incremented', { currentStreak, previousStreak: oldCurrent }).catch(() => {});
 
       const milestones = [3, 7, 14, 30, 50, 100, 200, 365];
-      if (milestones.includes(currentStreak)) {
+      if (milestones.includes(currentStreak) && await shouldDispatchNotification(userId, 'streak_milestone')) {
         const notif = await Notification.create({
           userId, type: 'streak_milestone', title: 'Streak Milestone!',
           message: `You reached a ${currentStreak}-day streak! Keep it going!`,
           data: { streak: currentStreak },
         });
+        await incrementNotificationCount(userId);
         if (io) io.to(`user:${userId}`).emit('NOTIFICATION', notif.toObject());
         sendPushNotification(userId, 'streak_milestone', {
           title: 'StandUpTracker', body: notif.message,
@@ -200,6 +202,9 @@ async function midnightRollover(io) {
   const startTime = Date.now();
   logger.info(`Midnight rollover starting for ${yesterday}`, { source: 'streaks' });
 
+  // Reset daily notification counts for all users
+  await resetDailyNotificationCounts();
+
   let usersEvaluated = 0;
   let personalBroken = 0;
   let friendBroken = 0;
@@ -230,13 +235,14 @@ async function midnightRollover(io) {
       // Webhook: streak.broken
       dispatchWebhook(user.userId, 'streak.broken', { previousStreak: oldStreak }).catch(() => {});
 
-      // Notification for streak broken
-      if (oldStreak >= 3) {
+      // Notification for streak broken (respects quiet hours + daily limit)
+      if (oldStreak >= 3 && await shouldDispatchNotification(user.userId, 'streak_broken')) {
         const notif = await Notification.create({
           userId: user.userId, type: 'streak_broken', title: 'Streak Broken',
           message: `Your ${oldStreak}-day streak ended. Start a new one today!`,
           data: { previousStreak: oldStreak },
         });
+        await incrementNotificationCount(user.userId);
         if (io) io.to(`user:${user.userId}`).emit('NOTIFICATION', notif.toObject());
         sendPushNotification(user.userId, 'streak_broken', {
           title: 'StandUpTracker', body: notif.message,
@@ -300,15 +306,18 @@ async function midnightRollover(io) {
           io.to(`user:${streak.userB}`).emit('FRIEND_STREAK_UPDATE', data);
         }
 
-        // Notification
+        // Notification (gated by quiet hours + daily limit)
         if (oldStreak >= 3) {
           for (const uid of [streak.userA, streak.userB]) {
-            const notif = await Notification.create({
-              userId: uid, type: 'friend_streak_broken', title: 'Friend Streak Broken',
-              message: `Your ${oldStreak}-day friend streak ended.`,
-              data: { previousStreak: oldStreak, userA: streak.userA, userB: streak.userB },
-            });
-            if (io) io.to(`user:${uid}`).emit('NOTIFICATION', notif.toObject());
+            if (await shouldDispatchNotification(uid, 'friend_streak_broken')) {
+              const notif = await Notification.create({
+                userId: uid, type: 'friend_streak_broken', title: 'Friend Streak Broken',
+                message: `Your ${oldStreak}-day friend streak ended.`,
+                data: { previousStreak: oldStreak, userA: streak.userA, userB: streak.userB },
+              });
+              await incrementNotificationCount(uid);
+              if (io) io.to(`user:${uid}`).emit('NOTIFICATION', notif.toObject());
+            }
           }
         }
       }
@@ -375,12 +384,15 @@ async function midnightRollover(io) {
 
         if (oldStreak >= 3) {
           for (const mid of memberIds) {
-            const notif = await Notification.create({
-              userId: mid, type: 'group_streak_broken', title: 'Group Streak Broken',
-              message: `Your group "${group.name}" lost its ${oldStreak}-day streak.`,
-              data: { previousStreak: oldStreak, groupId: group.groupId },
-            });
-            if (io) io.to(`user:${mid}`).emit('NOTIFICATION', notif.toObject());
+            if (await shouldDispatchNotification(mid, 'group_streak_broken')) {
+              const notif = await Notification.create({
+                userId: mid, type: 'group_streak_broken', title: 'Group Streak Broken',
+                message: `Your group "${group.name}" lost its ${oldStreak}-day streak.`,
+                data: { previousStreak: oldStreak, groupId: group.groupId },
+              });
+              await incrementNotificationCount(mid);
+              if (io) io.to(`user:${mid}`).emit('NOTIFICATION', notif.toObject());
+            }
           }
         }
       }

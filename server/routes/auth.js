@@ -34,8 +34,8 @@ async function createSession(res, user, req, { isImpersonation = false, imperson
 
   let timeoutMs;
   if (isImpersonation) {
-    // Impersonation sessions: 30 minutes, session cookie (no Max-Age persists past browser close)
-    timeoutMs = 30 * 60 * 1000;
+    // Impersonation sessions: 2 hours
+    timeoutMs = 2 * 60 * 60 * 1000;
   } else {
     const timeoutDays = Math.min(365, Math.max(1, Number(await getSetting('sessionTimeoutDays')) || 30));
     timeoutMs = timeoutDays * 24 * 60 * 60 * 1000;
@@ -61,15 +61,8 @@ async function createSession(res, user, req, { isImpersonation = false, imperson
     secure: sessionSecure,
     sameSite: 'lax',
     path: '/',
+    maxAge: timeoutMs,
   };
-
-  if (isImpersonation) {
-    // Session cookie — no maxAge means it dies when browser closes
-    // But also set a 30-min maxAge so it doesn't linger in open tabs
-    cookieOptions.maxAge = timeoutMs;
-  } else {
-    cookieOptions.maxAge = timeoutMs;
-  }
 
   res.cookie('sut_session', sessionId, cookieOptions);
   return sessionId;
@@ -168,6 +161,9 @@ router.post('/register', authLimiter, async (req, res) => {
         pushEnabled: user.pushEnabled || false,
         pushPreferences: user.pushPreferences || {},
         standupReminderTime: user.standupReminderTime || '12:00',
+        quietHoursFrom: user.quietHoursFrom || '22:00',
+        quietHoursUntil: user.quietHoursUntil || '07:00',
+        maxNotificationsPerDay: user.maxNotificationsPerDay ?? 3,
         enforceDailyGoal: !!enforceDailyGoal,
         enforce2fa: !!enforce2fa,
         needs2faSetup: !!enforce2fa && !(user.totpEnabled || user.email2faEnabled),
@@ -307,9 +303,13 @@ router.post('/login', authLimiter, async (req, res) => {
         createdAt: user.createdAt,
         pendingEmail: user.pendingEmail || null,
         geminiOptIn: user.geminiOptIn || false,
+        aiLanguage: user.aiLanguage || 'English',
         pushEnabled: user.pushEnabled || false,
         pushPreferences: user.pushPreferences || {},
         standupReminderTime: user.standupReminderTime || '12:00',
+        quietHoursFrom: user.quietHoursFrom || '22:00',
+        quietHoursUntil: user.quietHoursUntil || '07:00',
+        maxNotificationsPerDay: user.maxNotificationsPerDay ?? 3,
         enforceDailyGoal: !!enforceDailyGoal,
         enforce2fa: !!enforce2fa,
         needs2faSetup: !!enforce2fa && !has2fa,
@@ -419,9 +419,13 @@ router.get('/me', authenticate, softBanCheck, lastActiveTouch, async (req, res) 
       createdAt: u.createdAt,
       pendingEmail: u.pendingEmail || null,
       geminiOptIn: u.geminiOptIn,
+      aiLanguage: u.aiLanguage || 'English',
       pushEnabled: u.pushEnabled || false,
       pushPreferences: u.pushPreferences || {},
       standupReminderTime: u.standupReminderTime || '12:00',
+      quietHoursFrom: u.quietHoursFrom || '22:00',
+      quietHoursUntil: u.quietHoursUntil || '07:00',
+      maxNotificationsPerDay: u.maxNotificationsPerDay ?? 3,
       impersonator: req.impersonator || null,
       enforceDailyGoal: !!enforceDailyGoal,
       enforce2fa: !!enforce2fa,
@@ -439,14 +443,14 @@ router.post('/logout', authenticate, async (req, res) => {
       await Session.deleteOne({ sessionId: req.sessionDoc.sessionId });
     }
   } catch { /* best effort */ }
-  res.clearCookie('sut_session', { path: '/' });
+  res.clearCookie('sut_session', { httpOnly: true, sameSite: 'lax', path: '/' });
   res.json({ message: 'Logged out' });
 });
 
 // Update profile
 router.put('/profile', authenticate, softBanCheck, async (req, res) => {
   try {
-    const { theme, dailyGoalMinutes, geminiOptIn } = req.body;
+    const { theme, dailyGoalMinutes, geminiOptIn, aiLanguage } = req.body;
     if (theme && ['dark', 'light', 'system'].includes(theme)) {
       req.user.theme = theme;
     }
@@ -463,6 +467,9 @@ router.put('/profile', authenticate, softBanCheck, async (req, res) => {
     }
     if (typeof geminiOptIn === 'boolean') {
       req.user.geminiOptIn = geminiOptIn;
+    }
+    if (aiLanguage && typeof aiLanguage === 'string' && aiLanguage.length <= 50) {
+      req.user.aiLanguage = aiLanguage;
     }
     await req.user.save();
     res.json({ message: 'Profile updated' });

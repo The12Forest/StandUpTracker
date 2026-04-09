@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import {
   BarChart3, Calendar, TrendingUp, Brain, Sparkles, RefreshCw, Clock,
-  Award, Target, Flame, ArrowUpRight, ArrowDownRight, Minus, Zap, Trophy
+  Award, Target, Flame, ArrowUpRight, ArrowDownRight, Minus, Zap, Trophy, Languages
 } from 'lucide-react';
 import { Bar } from 'react-chartjs-2';
 import {
@@ -75,7 +75,18 @@ export default function DashboardPage() {
   const [aiAdvice, setAiAdvice] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [cooldownActive, setCooldownActive] = useState(false);
+  const [aiLanguage, setAiLanguage] = useState('English');
   const user = useAuthStore((s) => s.user);
+  const updateProfile = useAuthStore((s) => s.updateProfile);
+
+  const AI_LANGUAGES = [
+    'English', 'German', 'French', 'Spanish', 'Italian',
+    'Portuguese', 'Dutch', 'Polish', 'Japanese', 'Chinese (Simplified)',
+  ];
+
+  useEffect(() => {
+    if (user?.aiLanguage) setAiLanguage(user.aiLanguage);
+  }, [user?.aiLanguage]);
 
   useEffect(() => {
     const from = daysAgo(365);
@@ -396,6 +407,22 @@ export default function DashboardPage() {
                   {aiAdvice && (
                     <CooldownTimer nextRefreshAt={aiAdvice.nextRefreshAt} onReady={handleCooldownReady} />
                   )}
+                </div>
+
+                <div className="flex items-center gap-2 mb-3">
+                  <Languages size={13} className="text-zen-500 shrink-0" />
+                  <select
+                    value={aiLanguage}
+                    onChange={(e) => {
+                      setAiLanguage(e.target.value);
+                      updateProfile({ aiLanguage: e.target.value }).catch(() => {});
+                    }}
+                    className="bg-zen-800 border border-zen-700/50 rounded-lg text-xs text-zen-300 px-2 py-1 flex-1"
+                  >
+                    {AI_LANGUAGES.map((lang) => (
+                      <option key={lang} value={lang}>{lang}</option>
+                    ))}
+                  </select>
                 </div>
 
                 {aiAdvice?.advice ? (

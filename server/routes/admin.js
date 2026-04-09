@@ -28,7 +28,25 @@ const router = express.Router();
 const adminRoles = ['manager', 'admin', 'super_admin'];
 const editTimeRoles = ['admin', 'super_admin'];
 
+/** Extract impersonator_token from raw cookie header */
+function getImpersonatorCookie(req) {
+  const cookies = req.headers.cookie;
+  if (!cookies) return null;
+  const match = cookies.split(';').map(c => c.trim()).find(c => c.startsWith('impersonator_token='));
+  return match ? match.split('=').slice(1).join('=') : null;
+}
+
 router.use(authenticate, softBanCheck, lastActiveTouch);
+
+// Security: if impersonator_token cookie is present but the active session is NOT an
+// impersonation session, silently clear the stale impersonator_token cookie.
+router.use((req, res, next) => {
+  const impCookie = getImpersonatorCookie(req);
+  if (impCookie && (!req.sessionDoc || !req.sessionDoc.isImpersonation)) {
+    res.clearCookie('impersonator_token', { httpOnly: true, sameSite: 'strict', path: '/' });
+  }
+  next();
+});
 
 // recalcUserStats imported from ../utils/recalcStats
 
@@ -458,10 +476,34 @@ router.post('/impersonate/end', authenticate, async (req, res) => {
       admin: req.impersonator.userId, target: req.user.username, action: 'end',
     });
 
-    // Clear the impersonation cookie so the admin's login cookie takes effect again
-    res.clearCookie('sut_session', { path: '/' });
+    // Restore admin's original session from the impersonator_token cookie
+    const { sessionSecure } = await getAppConfig();
+    const impersonatorToken = getImpersonatorCookie(req);
+    if (impersonatorToken) {
+      // Verify the admin session still exists and is valid
+      const adminSession = await Session.findOne({ sessionId: impersonatorToken, expiresAt: { $gt: new Date() } });
+      if (adminSession) {
+        const remainingMs = adminSession.expiresAt.getTime() - Date.now();
+        res.cookie('sut_session', impersonatorToken, {
+          httpOnly: true,
+          secure: sessionSecure,
+          sameSite: 'lax',
+          path: '/',
+          maxAge: Math.max(remainingMs, 0),
+        });
+      } else {
+        // Admin session expired — clear the session cookie
+        res.clearCookie('sut_session', { httpOnly: true, sameSite: 'lax', path: '/' });
+      }
+    } else {
+      // No impersonator cookie — clear the session cookie
+      res.clearCookie('sut_session', { httpOnly: true, sameSite: 'lax', path: '/' });
+    }
 
-    res.json({ message: 'Impersonation ended' });
+    // Always clear the impersonator_token cookie
+    res.clearCookie('impersonator_token', { httpOnly: true, sameSite: 'strict', path: '/' });
+
+    res.json({ message: 'Impersonation ended', restored: !!impersonatorToken });
   } catch (err) {
     res.status(500).json({ error: 'Failed to end impersonation' });
   }
@@ -479,7 +521,21 @@ router.post('/impersonate/:userId', requireRole('super_admin'), async (req, res)
     target.impersonatedBy = req.user.userId;
     await target.save();
 
-    // Create impersonation session (30-min, session cookie)
+    // Save admin's current session token in a separate cookie for restoration
+    const adminSessionToken = req.sessionDoc?.sessionId;
+    if (adminSessionToken) {
+      const adminSessionExpiresIn = req.sessionDoc.expiresAt.getTime() - Date.now();
+      const { sessionSecure } = await getAppConfig();
+      res.cookie('impersonator_token', adminSessionToken, {
+        httpOnly: true,
+        secure: sessionSecure,
+        sameSite: 'strict',
+        path: '/',
+        maxAge: Math.max(adminSessionExpiresIn, 0),
+      });
+    }
+
+    // Create impersonation session (2 hours)
     const shadowToken = await createSession(res, target, req, {
       isImpersonation: true,
       impersonatorUserId: req.user.userId,

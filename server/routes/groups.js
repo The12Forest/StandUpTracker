@@ -7,6 +7,7 @@ const Notification = require('../models/Notification');
 const TrackingData = require('../models/TrackingData');
 const Settings = require('../models/Settings');
 const { getEffectiveGoalMinutes } = require('../utils/settings');
+const { shouldDispatchNotification, incrementNotificationCount } = require('../utils/notificationGate');
 
 const router = express.Router();
 router.use(authenticate, softBanCheck, lastActiveTouch);
@@ -222,18 +223,21 @@ router.post('/:groupId/invite', requireVerified, async (req, res) => {
     group.invites.push({ userId: target.userId, invitedBy: req.user.userId });
     await group.save();
 
-    // Create persistent notification so offline users don't miss the invite
-    const notif = await Notification.create({
-      userId: target.userId,
-      type: 'group_invite',
-      title: 'Group Invitation',
-      message: `${req.user.username} invited you to join "${group.name}".`,
-      data: { groupId: group.groupId, groupName: group.name, invitedBy: req.user.username },
-    });
-
     const io = req.app.get('io');
-    // Emit persistent notification to notification bell
-    io.to(`user:${target.userId}`).emit('NOTIFICATION', notif.toObject());
+
+    // Create persistent notification so offline users don't miss the invite (gated)
+    if (await shouldDispatchNotification(target.userId, 'group_invite')) {
+      const notif = await Notification.create({
+        userId: target.userId,
+        type: 'group_invite',
+        title: 'Group Invitation',
+        message: `${req.user.username} invited you to join "${group.name}".`,
+        data: { groupId: group.groupId, groupName: group.name, invitedBy: req.user.username },
+      });
+      await incrementNotificationCount(target.userId);
+      // Emit persistent notification to notification bell
+      io.to(`user:${target.userId}`).emit('NOTIFICATION', notif.toObject());
+    }
     // Also emit GROUP_INVITE for real-time invite list refresh
     io.to(`user:${target.userId}`).emit('GROUP_INVITE', {
       groupId: group.groupId,
