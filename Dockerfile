@@ -10,6 +10,9 @@ RUN npm run build
 # ── Stage 2: Production image ────────────────────────────────────────────────
 FROM node:20-alpine
 
+ARG APP_VERSION=dev
+ENV APP_VERSION=$APP_VERSION
+
 WORKDIR /app
 
 # Install server dependencies

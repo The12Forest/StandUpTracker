@@ -97,6 +97,7 @@ fi
 echo "→ Building ${FULL_IMAGE}:${VERSION} (also tagging as latest)..."
 docker build \
   --file "${DOCKERFILE}" \
+  --build-arg APP_VERSION="${VERSION}" \
   --tag "${FULL_IMAGE}:${VERSION}" \
   --tag "${FULL_IMAGE}:latest" \
   .

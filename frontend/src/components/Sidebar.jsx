@@ -118,7 +118,7 @@ export default function Sidebar() {
             Sign Out
           </button>
           {version && (
-            <p className="text-[10px] text-zen-600 text-center mt-2">v{version}</p>
+            <p className="text-xs text-zen-600 text-center mt-2">v{version}</p>
           )}
         </div>
       </aside>
