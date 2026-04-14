@@ -662,3 +662,71 @@ Your webhook secret is shown **only once** at creation. If you believe your secr
 
 For documentation of other REST API endpoints (auth, tracking, admin, social, groups, leaderboard, notifications, etc.), see the main README or your API documentation tool.
 
+## Home Assistant Example
+
+```YAML
+# Pull timer state every 30 seconds
+rest:
+  - resource: https://standuptracker.wnw.li/api/v1/timer/status
+    headers:
+      Authorization: Bearer sut_1fc59868331a6567cb17e74ce3ef9444ad89c108
+    scan_interval: 30
+    sensor:
+      - name: "StandUpTracker Status"
+        unique_id: standuptracker_status
+        value_template: "{{ value_json.running }}"
+        icon: >
+          {% if value_json.running %} mdi:run {% else %} mdi:pause {% endif %}
+        json_attributes:
+          - todayTotalSeconds
+          - todayGoalSeconds
+          - todayGoalMet
+          - currentStreak
+          - level
+
+      - name: "StandUpTracker Total Time"
+        unique_id: standuptracker_total_seconds
+        value_template: "{{ (value_json.todayTotalSeconds / 60) | round(1) }}"
+        unit_of_measurement: "min"
+        device_class: duration
+        icon: mdi:timer-outline
+
+      - name: "StandUpTracker Goal"
+        unique_id: standuptracker_goal_seconds
+        value_template: "{{ (value_json.todayGoalSeconds / 60) | round(0) }}"
+        unit_of_measurement: "min"
+        icon: mdi:flag-checkered
+
+# Commands to start/stop the timer
+rest_command:
+  standuptracker_start:
+    url: https://standuptracker.wnw.li/api/v1/timer/start
+    method: GET
+    headers:
+      Authorization: Bearer sut_1fc59868331a6567cb17e74ce3ef9444ad89c108
+
+  standuptracker_stop:
+    url: https://standuptracker.wnw.li/api/v1/timer/stop
+    method: GET
+    headers:
+      Authorization: Bearer sut_1fc59868331a6567cb17e74ce3ef9444ad89c108
+
+# Template switch that ties it all together
+template:
+  - switch:
+      - name: "StandUpTracker"
+        unique_id: standuptracker_switch
+        icon: mdi:human-queue
+        state: "{{ states('sensor.standuptracker_status') == 'True' }}"
+        turn_on:
+          action: rest_command.standuptracker_start
+        turn_off:
+          action: rest_command.standuptracker_stop
+  - sensor:
+      - name: "StandUpTracker Standing Time Remaining"
+        unit_of_measurement: "min"
+        state: >
+          {% set total = states('sensor.standuptracker_total_seconds') | float(0) %}
+          {% set goal = states('sensor.standuptracker_goal_seconds') | float(0) %}
+          {{ [0, (goal - total)] | max | round(1) }}
+```
