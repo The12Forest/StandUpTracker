@@ -29,6 +29,12 @@ function getCookieValue(req, name) {
  * checks expiry, loads user, updates lastActiveAt (debounced 1 min).
  */
 async function authenticate(req, res, next) {
+  // Bypass standard cookie/session auth for public v1 API
+  // (These routes are protected by authenticateApiKey instead)
+  if (req.originalUrl && req.originalUrl.includes('/api/v1/')) {
+    return next();
+  }
+
   const token = getTokenFromRequest(req);
   if (!token) {
     return res.status(401).json({ error: 'Authentication required' });
