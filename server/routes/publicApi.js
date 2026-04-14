@@ -9,13 +9,15 @@ const rateLimit = require('express-rate-limit');
 const User = require('../models/User');
 const TrackingData = require('../models/TrackingData');
 const Notification = require('../models/Notification');
-const { authenticateApiKey } = require('../middleware/auth');
 const { getEffectiveGoalMinutes } = require('../utils/settings');
 const { checkAndSetGoalMet } = require('../utils/streaks');
 const { recalcUserStats } = require('../utils/recalcStats');
 const { sendPushNotification } = require('../utils/pushSender');
 const { shouldDispatchNotification, incrementNotificationCount } = require('../utils/notificationGate');
+const { dispatchWebhook } = require('../utils/webhookDispatch');
 const logger = require('../utils/logger');
+const crypto = require('crypto');
+const ApiKey = require('../models/ApiKey');
 
 const router = express.Router();
 
@@ -36,7 +38,47 @@ const apiRateLimit = rateLimit({
 });
 
 router.use(apiRateLimit);
-router.use(authenticateApiKey);
+
+// Local API Key Authentication Middleware
+async function authenticateApiKeyLocal(req, res, next) {
+  try {
+    // Extract token from query parameter OR Bearer header
+    let token = req.query.api_key;
+    if (!token && req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+      token = req.headers.authorization.slice(7);
+    }
+
+    if (!token) {
+      return res.status(401).json({ error: 'Authentication required. Missing API key.' });
+    }
+
+    // Hash token and search in database
+    const keyHash = crypto.createHash('sha256').update(token).digest('hex');
+    const apiKeyDoc = await ApiKey.findOne({ keyHash });
+
+    if (!apiKeyDoc) {
+      return res.status(401).json({ error: 'Invalid API key' });
+    }
+
+    // Find associated active user
+    const user = await User.findOne({ userId: apiKeyDoc.userId, active: true });
+    if (!user) {
+      return res.status(403).json({ error: 'User not found or deactivated' });
+    }
+
+    // Update 'lastUsedAt' without blocking the request
+    ApiKey.updateOne({ _id: apiKeyDoc._id }, { $set: { lastUsedAt: new Date() } }).catch(() => {});
+
+    req.user = user;
+    req.apiKey = apiKeyDoc;
+    next();
+  } catch (err) {
+    logger.error(`API Key Auth Error: ${err.message}`, { source: 'publicApi' });
+    res.status(500).json({ error: 'Authentication failed' });
+  }
+}
+
+router.use(authenticateApiKeyLocal);
 
 /**
  * GET /api/v1/timer/status
@@ -105,6 +147,9 @@ router.get('/timer/start', async (req, res) => {
       });
       io.to('authenticated').emit('LEADERBOARD_UPDATE');
     }
+
+    // Webhook: timer.started
+    dispatchWebhook(userId, 'timer.started', { startedAt: now.toISOString() }).catch(() => {});
 
     logger.info(`Timer started via API key for ${req.user.username}`, { source: 'publicApi', userId });
 
@@ -193,11 +238,16 @@ router.get('/timer/stop', async (req, res) => {
           await incrementNotificationCount(userId);
           io.to(`user:${userId}`).emit('NOTIFICATION', notif.toObject());
           sendPushNotification(userId, 'daily_goal_reached', { title: 'StandUpTracker', body: notif.message }).catch(() => {});
+          // Webhook: goal.reached
+          dispatchWebhook(userId, 'goal.reached', { minutes: Math.round(todayGoalSeconds / 60), todayTotalSeconds: record.seconds }).catch(() => {});
         }
 
         io.to(`user:${userId}`).emit('TIMER_SYNC', { running: false, startedAt: null, serverTime: Date.now() });
         io.to('authenticated').emit('LEADERBOARD_UPDATE');
       }
+
+      // Webhook: timer.stopped
+      dispatchWebhook(userId, 'timer.stopped', { durationSeconds: sessionSeconds, todayTotalSeconds }).catch(() => {});
 
       checkAndSetGoalMet(userId, date, io).catch(() => {});
     }

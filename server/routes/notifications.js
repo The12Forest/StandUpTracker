@@ -1,6 +1,6 @@
 const express = require('express');
 const { authenticate } = require('../middleware/auth');
-const { softBanCheck, lastActiveTouch } = require('../middleware/guards');
+const { softBanCheck, lastActiveTouch, require2faSetup } = require('../middleware/guards');
 const Notification = require('../models/Notification');
 const PushSubscription = require('../models/PushSubscription');
 const User = require('../models/User');
@@ -8,7 +8,7 @@ const { getSetting } = require('../utils/settings');
 
 const router = express.Router();
 
-router.use(authenticate, softBanCheck, lastActiveTouch);
+router.use(authenticate, softBanCheck, require2faSetup, lastActiveTouch);
 
 // List notifications (newest first, max 50)
 router.get('/', async (req, res) => {

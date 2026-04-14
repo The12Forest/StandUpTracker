@@ -392,48 +392,52 @@ router.post('/resend-verification', authLimiter, async (req, res) => {
 
 // Get current user (also returns session token for socket auth on page reload)
 router.get('/me', authenticate, softBanCheck, lastActiveTouch, async (req, res) => {
-  const u = req.user;
-  const enforceDailyGoal = await getSetting('enforceDailyGoal');
-  const enforce2fa = await getSetting('enforce2fa');
-  const allowUsernameChanges = await getSetting('allowUsernameChanges');
-  const firstDayOfWeek = await getSetting('firstDayOfWeek') || 'sunday';
-  const masterGoal = enforceDailyGoal ? await getSetting('masterDailyGoalMinutes') : null;
-  const has2fa = u.totpEnabled || u.email2faEnabled;
-  res.json({
-    token: req.sessionDoc?.sessionId || null,
-    user: {
-      userId: u.userId,
-      username: u.username,
-      email: u.email,
-      role: u.role,
-      emailVerified: u.emailVerified,
-      theme: u.theme,
-      dailyGoalMinutes: enforceDailyGoal ? (masterGoal || 60) : u.dailyGoalMinutes,
-      totpEnabled: u.totpEnabled,
-      email2faEnabled: u.email2faEnabled,
-      totalStandingSeconds: u.totalStandingSeconds,
-      totalDays: u.totalDays,
-      currentStreak: u.currentStreak,
-      bestStreak: u.bestStreak,
-      level: u.level,
-      createdAt: u.createdAt,
-      pendingEmail: u.pendingEmail || null,
-      geminiOptIn: u.geminiOptIn,
-      aiLanguage: u.aiLanguage || 'English',
-      pushEnabled: u.pushEnabled || false,
-      pushPreferences: u.pushPreferences || {},
-      standupReminderTime: u.standupReminderTime || '12:00',
-      quietHoursFrom: u.quietHoursFrom || '22:00',
-      quietHoursUntil: u.quietHoursUntil || '07:00',
-      maxNotificationsPerDay: u.maxNotificationsPerDay ?? 3,
-      impersonator: req.impersonator || null,
-      enforceDailyGoal: !!enforceDailyGoal,
-      enforce2fa: !!enforce2fa,
-      needs2faSetup: !!enforce2fa && !has2fa,
-      canChangeUsername: !!allowUsernameChanges && u.canChangeUsername !== false,
-      firstDayOfWeek,
-    },
-  });
+  try {
+    const u = req.user;
+    const enforceDailyGoal = await getSetting('enforceDailyGoal');
+    const enforce2fa = await getSetting('enforce2fa');
+    const allowUsernameChanges = await getSetting('allowUsernameChanges');
+    const firstDayOfWeek = await getSetting('firstDayOfWeek') || 'sunday';
+    const masterGoal = enforceDailyGoal ? await getSetting('masterDailyGoalMinutes') : null;
+    const has2fa = u.totpEnabled || u.email2faEnabled;
+    res.json({
+      token: req.sessionDoc?.sessionId || null,
+      user: {
+        userId: u.userId,
+        username: u.username,
+        email: u.email,
+        role: u.role,
+        emailVerified: u.emailVerified,
+        theme: u.theme,
+        dailyGoalMinutes: enforceDailyGoal ? (masterGoal || 60) : u.dailyGoalMinutes,
+        totpEnabled: u.totpEnabled,
+        email2faEnabled: u.email2faEnabled,
+        totalStandingSeconds: u.totalStandingSeconds,
+        totalDays: u.totalDays,
+        currentStreak: u.currentStreak,
+        bestStreak: u.bestStreak,
+        level: u.level,
+        createdAt: u.createdAt,
+        pendingEmail: u.pendingEmail || null,
+        geminiOptIn: u.geminiOptIn,
+        aiLanguage: u.aiLanguage || 'English',
+        pushEnabled: u.pushEnabled || false,
+        pushPreferences: u.pushPreferences || {},
+        standupReminderTime: u.standupReminderTime || '12:00',
+        quietHoursFrom: u.quietHoursFrom || '22:00',
+        quietHoursUntil: u.quietHoursUntil || '07:00',
+        maxNotificationsPerDay: u.maxNotificationsPerDay ?? 3,
+        impersonator: req.impersonator || null,
+        enforceDailyGoal: !!enforceDailyGoal,
+        enforce2fa: !!enforce2fa,
+        needs2faSetup: !!enforce2fa && !has2fa,
+        canChangeUsername: !!allowUsernameChanges && u.canChangeUsername !== false,
+        firstDayOfWeek,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch user profile' });
+  }
 });
 
 // Logout (deletes DB session + clears cookie)

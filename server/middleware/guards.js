@@ -79,6 +79,21 @@ function lastActiveTouch(req, res, next) {
   next();
 }
 
+/**
+ * Block API access for users who haven't completed mandatory 2FA setup.
+ * Must run after `authenticate` (needs req.user).
+ */
+async function require2faSetup(req, res, next) {
+  if (!req.user) return next();
+  try {
+    const enforce2fa = await Settings.get('enforce2fa');
+    if (enforce2fa && !req.user.totpEnabled && !req.user.email2faEnabled) {
+      return res.status(403).json({ error: '2FA setup required', needs2faSetup: true });
+    }
+  } catch { /* if Settings fails, let the request through */ }
+  next();
+}
+
 function aiGateCheck(req, res, next) {
   Settings.get('ollamaEnabled').then(enabled => {
     if (!enabled) {
@@ -97,5 +112,6 @@ module.exports = {
   impersonationGuard,
   currentDayGuard,
   lastActiveTouch,
+  require2faSetup,
   aiGateCheck,
 };

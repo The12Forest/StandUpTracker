@@ -6,6 +6,7 @@ services:
       - "3000:3000"
     environment:
       MONGO_URI: mongodb://mongo:27017/standuptracker
+      TZ: UTC
     depends_on:
       mongo:
         condition: service_healthy

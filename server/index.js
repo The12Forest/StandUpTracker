@@ -19,7 +19,7 @@ const onboardingRoutes = require('./routes/onboarding');
 const reportRoutes = require('./routes/reports');
 const schedulerRoutes = require('./routes/scheduler');
 const publicApiRoutes = require('./routes/publicApi');
-const { maintenanceGate } = require('./middleware/guards');
+const { maintenanceGate, require2faSetup } = require('./middleware/guards');
 const { setupSocket } = require('./socket/handler');
 const { startupStreakIntegrityCheck, scheduleMidnightJob } = require('./utils/streaks');
 const { runNotificationScheduler } = require('./utils/notifications');
@@ -139,13 +139,13 @@ async function start() {
   try {
     await mongoose.connect(uri, { serverSelectionTimeoutMS: 3000 });
   } catch (err) {
-    console.log('Primary MongoDB unreachable, trying in-memory server...');
+    logger.warn('Primary MongoDB unreachable, trying in-memory server...');
     try {
       const { MongoMemoryServer } = require('mongodb-memory-server');
       const mongod = await MongoMemoryServer.create();
       uri = mongod.getUri();
       await mongoose.connect(uri);
-      console.log('Using in-memory MongoDB at', uri);
+      logger.info(`Using in-memory MongoDB at ${uri}`);
     } catch (e) {
       logger.error('MongoDB connection failed', { meta: { error: e.message } });
       process.exit(1);
@@ -185,7 +185,7 @@ async function start() {
 
   server.listen(port, () => {
     logger.info(`Server running on port ${port}`);
-    console.log(`Server running on http://localhost:${port}`);
+    logger.info(`Server running on http://localhost:${port}`);
   });
 }
 start();

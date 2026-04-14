@@ -1,6 +1,6 @@
 const express = require('express');
 const { authenticate, requireVerified } = require('../middleware/auth');
-const { softBanCheck, lastActiveTouch } = require('../middleware/guards');
+const { softBanCheck, lastActiveTouch, require2faSetup } = require('../middleware/guards');
 const TrackingData = require('../models/TrackingData');
 const OffDay = require('../models/OffDay');
 const Group = require('../models/Group');
@@ -8,7 +8,7 @@ const User = require('../models/User');
 const Settings = require('../models/Settings');
 
 const router = express.Router();
-router.use(authenticate, softBanCheck, lastActiveTouch);
+router.use(authenticate, softBanCheck, require2faSetup, lastActiveTouch);
 
 // Get personal sessions for a week
 router.get('/sessions', requireVerified, async (req, res) => {

@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, Calendar, Coffee, CoffeeIcon, UsersRound, Us
 import { api } from '../lib/api';
 import { BentoCard } from '../components/BentoCard';
 import useSocketStore from '../stores/useSocketStore';
+import useAuthStore from '../stores/useAuthStore';
 import useToastStore from '../stores/useToastStore';
 import useForgottenCheckout from '../hooks/useForgottenCheckout';
 import ForgottenCheckoutModal from '../components/ForgottenCheckoutModal';
@@ -38,10 +39,12 @@ function toDateStr(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-/** Return the Sunday (week start) for the week containing `date`. */
-function getWeekStart(date) {
+/** Return the week start for the week containing `date`, respecting firstDayOfWeek. */
+function getWeekStart(date, firstDay = 'sunday') {
   const d = new Date(date);
-  d.setDate(d.getDate() - d.getDay()); // getDay() 0=Sun → subtract 0; 6=Sat → subtract 6
+  const day = d.getDay();
+  const offset = firstDay === 'monday' ? ((day + 6) % 7) : day;
+  d.setDate(d.getDate() - offset);
   return toDateStr(d);
 }
 
@@ -328,13 +331,15 @@ function GroupCalendar({ weekDays, members, selectedMembers, today }) {
 
 export default function SchedulerPage() {
   const socket = useSocketStore((s) => s.socket);
+  const user = useAuthStore((s) => s.user);
+  const firstDayOfWeek = user?.firstDayOfWeek || 'sunday';
   const toast = useToastStore();
   const { forgotten, check: checkForgotten, finalize, discard } = useForgottenCheckout();
   const [showForgottenModal, setShowForgottenModal] = useState(false);
   const today = toDateStr(new Date());
 
-  // Week state — always Sunday-first
-  const [weekStart, setWeekStart] = useState(() => getWeekStart(new Date()));
+  // Week state — respects firstDayOfWeek setting
+  const [weekStart, setWeekStart] = useState(() => getWeekStart(new Date(), firstDayOfWeek));
   const weekDays = useMemo(() => getWeekDays(weekStart), [weekStart]);
 
   // View mode
@@ -421,14 +426,14 @@ export default function SchedulerPage() {
     };
   }, [socket, view, fetchPersonal, fetchGroupData]);
 
-  // Week navigation — add/subtract 7 days then snap to Sunday
+  // Week navigation — add/subtract 7 days then snap to week start
   const navWeek = (dir) => {
     const d = new Date(weekStart + 'T00:00:00');
     d.setDate(d.getDate() + dir * 7);
-    setWeekStart(getWeekStart(d));
+    setWeekStart(getWeekStart(d, firstDayOfWeek));
   };
 
-  const goToday = () => setWeekStart(getWeekStart(new Date()));
+  const goToday = () => setWeekStart(getWeekStart(new Date(), firstDayOfWeek));
 
   // Toggle off day
   const toggleOffDay = async (dateStr) => {

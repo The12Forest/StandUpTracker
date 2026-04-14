@@ -1,6 +1,6 @@
 const express = require('express');
 const { authenticate, requireVerified } = require('../middleware/auth');
-const { softBanCheck, lastActiveTouch } = require('../middleware/guards');
+const { softBanCheck, lastActiveTouch, require2faSetup } = require('../middleware/guards');
 const Group = require('../models/Group');
 const User = require('../models/User');
 const Notification = require('../models/Notification');
@@ -10,7 +10,7 @@ const { getEffectiveGoalMinutes } = require('../utils/settings');
 const { shouldDispatchNotification, incrementNotificationCount } = require('../utils/notificationGate');
 
 const router = express.Router();
-router.use(authenticate, softBanCheck, lastActiveTouch);
+router.use(authenticate, softBanCheck, require2faSetup, lastActiveTouch);
 
 // List groups the user belongs to (with streak info)
 router.get('/', async (req, res) => {

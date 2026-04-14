@@ -2,7 +2,7 @@ const express = require('express');
 const os = require('os');
 const argon2 = require('argon2');
 const { authenticate, requireRole } = require('../middleware/auth');
-const { softBanCheck, lastActiveTouch } = require('../middleware/guards');
+const { softBanCheck, lastActiveTouch, require2faSetup } = require('../middleware/guards');
 const User = require('../models/User');
 const Session = require('../models/Session');
 const Log = require('../models/Log');
@@ -36,7 +36,7 @@ function getImpersonatorCookie(req) {
   return match ? match.split('=').slice(1).join('=') : null;
 }
 
-router.use(authenticate, softBanCheck, lastActiveTouch);
+router.use(authenticate, softBanCheck, require2faSetup, lastActiveTouch);
 
 // Security: if impersonator_token cookie is present but the active session is NOT an
 // impersonation session, silently clear the stale impersonator_token cookie.
@@ -422,7 +422,21 @@ router.post('/users/bulk', requireRole('super_admin'), async (req, res) => {
             await u.save();
             if (params.confirmHardDelete) {
               await TrackingData.deleteMany({ userId: uid });
+              await DailyGoalOverride.deleteMany({ userId: uid });
+              await OffDay.deleteMany({ userId: uid });
+              await Friendship.deleteMany({ $or: [{ requesterId: uid }, { receiverId: uid }] });
+              await FriendStreak.deleteMany({ $or: [{ userId1: uid }, { userId2: uid }] });
+              await AiAdviceCache.deleteMany({ userId: uid });
+              const Notification = require('../models/Notification');
+              await Notification.deleteMany({ userId: uid });
+              await Group.updateMany({ members: uid }, { $pull: { members: uid } });
             }
+            // Clean up sessions and API credentials regardless of hard delete
+            await Session.deleteMany({ userId: uid });
+            const ApiKey = require('../models/ApiKey');
+            await ApiKey.deleteMany({ userId: uid });
+            const Webhook = require('../models/Webhook');
+            await Webhook.deleteMany({ userId: uid });
             // Force-disconnect the deleted user's sockets
             const io = req.app.get('io');
             if (io) io.in(`user:${uid}`).disconnectSockets(true);
@@ -781,6 +795,10 @@ router.get('/settings', requireRole(...adminRoles), async (req, res) => {
 router.put('/settings', requireRole('super_admin'), async (req, res) => {
   try {
     const updates = req.body;
+    // Validate ollamaEndpoint URL format if provided
+    if (updates.ollamaEndpoint && !/^https?:\/\/.+/.test(updates.ollamaEndpoint.trim())) {
+      return res.status(400).json({ error: 'ollamaEndpoint must be a valid HTTP/HTTPS URL' });
+    }
     for (const [key, value] of Object.entries(updates)) {
       await Settings.set(key, value);
     }
@@ -814,9 +832,13 @@ router.put('/settings', requireRole('super_admin'), async (req, res) => {
 
 // ─── WebSocket connection count ───
 router.get('/connections', requireRole(...adminRoles), async (req, res) => {
-  const io = req.app.get('io');
-  const sockets = await io.fetchSockets();
-  res.json({ connections: sockets.length });
+  try {
+    const io = req.app.get('io');
+    const sockets = await io.fetchSockets();
+    res.json({ connections: sockets.length });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch connections' });
+  }
 });
 
 // ─── Extended Statistics: Users, Friends, Groups ───

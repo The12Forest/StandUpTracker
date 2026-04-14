@@ -1,6 +1,6 @@
 const express = require('express');
 const { authenticate } = require('../middleware/auth');
-const { softBanCheck, lastActiveTouch } = require('../middleware/guards');
+const { softBanCheck, lastActiveTouch, require2faSetup } = require('../middleware/guards');
 const User = require('../models/User');
 const Report = require('../models/Report');
 const TrackingData = require('../models/TrackingData');
@@ -14,7 +14,7 @@ const { shouldDispatchNotification, incrementNotificationCount } = require('../u
 const logger = require('../utils/logger');
 
 const router = express.Router();
-router.use(authenticate, softBanCheck, lastActiveTouch);
+router.use(authenticate, softBanCheck, require2faSetup, lastActiveTouch);
 
 // Submit a report against a user's active timer session
 router.post('/', async (req, res) => {

@@ -161,7 +161,11 @@ async function recalcPersonalStreak(userId, io) {
       dispatchWebhook(userId, 'streak.incremented', { currentStreak, previousStreak: oldCurrent }).catch(() => {});
 
       const milestones = [3, 7, 14, 30, 50, 100, 200, 365];
-      if (milestones.includes(currentStreak) && await shouldDispatchNotification(userId, 'streak_milestone')) {
+      const todayMidnight = new Date(new Date().toISOString().slice(0, 10) + 'T00:00:00Z');
+      const existingMilestone = milestones.includes(currentStreak)
+        ? await Notification.findOne({ userId, type: 'streak_milestone', 'data.streak': currentStreak, createdAt: { $gte: todayMidnight } })
+        : null;
+      if (!existingMilestone && milestones.includes(currentStreak) && await shouldDispatchNotification(userId, 'streak_milestone')) {
         const notif = await Notification.create({
           userId, type: 'streak_milestone', title: 'Streak Milestone!',
           message: `You reached a ${currentStreak}-day streak! Keep it going!`,

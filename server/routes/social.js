@@ -1,6 +1,6 @@
 const express = require('express');
 const { authenticate, requireVerified } = require('../middleware/auth');
-const { softBanCheck, lastActiveTouch } = require('../middleware/guards');
+const { softBanCheck, lastActiveTouch, require2faSetup } = require('../middleware/guards');
 const Friendship = require('../models/Friendship');
 const FriendStreak = require('../models/FriendStreak');
 const TrackingData = require('../models/TrackingData');
@@ -15,7 +15,7 @@ const { shouldDispatchNotification, incrementNotificationCount } = require('../u
 
 const router = express.Router();
 
-router.use(authenticate, softBanCheck, lastActiveTouch);
+router.use(authenticate, softBanCheck, require2faSetup, lastActiveTouch);
 
 // Helper: canonical order for streak pair
 function streakPair(a, b) {

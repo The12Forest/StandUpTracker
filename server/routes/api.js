@@ -1,6 +1,6 @@
 const express = require('express');
 const { authenticate, requireVerified } = require('../middleware/auth');
-const { currentDayGuard, softBanCheck, lastActiveTouch } = require('../middleware/guards');
+const { currentDayGuard, softBanCheck, lastActiveTouch, require2faSetup } = require('../middleware/guards');
 const TrackingData = require('../models/TrackingData');
 const Notification = require('../models/Notification');
 const User = require('../models/User');
@@ -10,48 +10,61 @@ const { getEffectiveGoalMinutes, getSetting, getMinActivityThresholdSeconds } = 
 const { recalcUserStats } = require('../utils/recalcStats');
 const { sendPushNotification } = require('../utils/pushSender');
 const { shouldDispatchNotification, incrementNotificationCount } = require('../utils/notificationGate');
+const { dispatchWebhook } = require('../utils/webhookDispatch');
 const AuditLog = require('../models/AuditLog');
 const Settings = require('../models/Settings');
 
 const router = express.Router();
 
 // Apply soft-ban and last-active to all authenticated routes
-router.use(authenticate, softBanCheck, lastActiveTouch);
+router.use(authenticate, softBanCheck, require2faSetup, lastActiveTouch);
 
 // ─── Timer state ───
 router.get('/timer/state', async (req, res) => {
-  const u = await User.findOne({ userId: req.user.userId }).select('timerRunning timerStartedAt');
-  res.json({
-    running: !!u.timerRunning,
-    startedAt: u.timerStartedAt ? u.timerStartedAt.getTime() : null,
-    serverTime: Date.now(),
-  });
+  try {
+    const u = await User.findOne({ userId: req.user.userId }).select('timerRunning timerStartedAt');
+    res.json({
+      running: !!u.timerRunning,
+      startedAt: u.timerStartedAt ? u.timerStartedAt.getTime() : null,
+      serverTime: Date.now(),
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch timer state' });
+  }
 });
 
 router.post('/timer/start', requireVerified, async (req, res) => {
-  const now = new Date();
-  // Atomically start the timer only if it's not already running
-  const u = await User.findOneAndUpdate(
-    { userId: req.user.userId, timerRunning: { $ne: true } },
-    { $set: { timerRunning: true, timerStartedAt: now } },
-    { new: true }
-  );
-  if (!u) return res.status(409).json({ error: 'Timer already running' });
+  try {
+    const now = new Date();
+    // Atomically start the timer only if it's not already running
+    const u = await User.findOneAndUpdate(
+      { userId: req.user.userId, timerRunning: { $ne: true } },
+      { $set: { timerRunning: true, timerStartedAt: now } },
+      { new: true }
+    );
+    if (!u) return res.status(409).json({ error: 'Timer already running' });
 
-  // Broadcast to all user devices
-  const io = req.app.get('io');
-  if (io) {
-    io.to(`user:${req.user.userId}`).emit('TIMER_SYNC', {
-      running: true,
-      startedAt: now.getTime(),
-      serverTime: Date.now(),
-    });
+    // Broadcast to all user devices
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`user:${req.user.userId}`).emit('TIMER_SYNC', {
+        running: true,
+        startedAt: now.getTime(),
+        serverTime: Date.now(),
+      });
+    }
+
+    // Webhook: timer.started
+    dispatchWebhook(req.user.userId, 'timer.started', { startedAt: now.toISOString() }).catch(() => {});
+
+    res.json({ running: true, startedAt: now.getTime(), serverTime: Date.now() });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to start timer' });
   }
-
-  res.json({ running: true, startedAt: now.getTime(), serverTime: Date.now() });
 });
 
 router.post('/timer/stop', requireVerified, currentDayGuard, async (req, res) => {
+  try {
   // Atomically stop the timer to prevent race conditions from concurrent requests
   const now = new Date();
   const u = await User.findOneAndUpdate(
@@ -137,8 +150,13 @@ router.post('/timer/stop', requireVerified, currentDayGuard, async (req, res) =>
           title: 'StandUpTracker',
           body: notif.message,
         }).catch(() => {});
+        // Webhook: goal.reached
+        dispatchWebhook(req.user.userId, 'goal.reached', { minutes: Math.round(todayGoalSeconds / 60), todayTotalSeconds: todaySeconds }).catch(() => {});
       }
     }
+
+    // Webhook: timer.stopped
+    dispatchWebhook(req.user.userId, 'timer.stopped', { durationSeconds: sessionSeconds, todayTotalSeconds: todaySeconds }).catch(() => {});
 
     // Trigger A: evaluate goal_met flag and update personal streak
     const io2 = req.app.get('io');
@@ -156,6 +174,9 @@ router.post('/timer/stop', requireVerified, currentDayGuard, async (req, res) =>
   }
 
   res.json({ running: false, sessionSeconds, todaySeconds, serverTime: Date.now() });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to stop timer' });
+  }
 });
 
 // Save tracking data
@@ -268,16 +289,20 @@ router.post('/tracking/sync', requireVerified, async (req, res) => {
 
 // Get user stats
 router.get('/stats', async (req, res) => {
-  const u = req.user;
-  const effectiveGoal = await getEffectiveGoalMinutes(u);
-  res.json({
-    totalStandingSeconds: u.totalStandingSeconds,
-    totalDays: u.totalDays,
-    currentStreak: u.currentStreak,
-    bestStreak: u.bestStreak,
-    level: u.level,
-    dailyGoalMinutes: effectiveGoal,
-  });
+  try {
+    const u = req.user;
+    const effectiveGoal = await getEffectiveGoalMinutes(u);
+    res.json({
+      totalStandingSeconds: u.totalStandingSeconds,
+      totalDays: u.totalDays,
+      currentStreak: u.currentStreak,
+      bestStreak: u.bestStreak,
+      level: u.level,
+      dailyGoalMinutes: effectiveGoal,
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch stats' });
+  }
 });
 
 // ─── Extended user stats ───
