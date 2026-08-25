@@ -30,10 +30,17 @@ export default function TimerPage() {
         >
           <AlertTriangle size={18} className="text-warn-400 shrink-0" />
           <div className="flex-1 min-w-0">
-            <p className="text-sm text-zen-200 font-medium">Forgotten checkout detected</p>
-            <p className="text-xs text-zen-400">Your timer has been running for over {forgotten.thresholdHours}h. Click to resolve.</p>
+            <p className="text-sm text-zen-200 font-medium">
+              Forgotten checkout detected
+            </p>
+            <p className="text-xs text-zen-400">
+              Your timer has been running for over {forgotten.thresholdHours}h.
+              Click to resolve.
+            </p>
           </div>
-          <span className="text-xs text-warn-400 font-medium shrink-0">Resolve</span>
+          <span className="text-xs text-warn-400 font-medium shrink-0">
+            Resolve
+          </span>
         </div>
       )}
       {showForgottenModal && forgotten && (
@@ -41,21 +48,29 @@ export default function TimerPage() {
           forgotten={forgotten}
           onFinalize={finalize}
           onDiscard={discard}
-          onClose={() => { setShowForgottenModal(false); fetchState(); loadToday(); }}
+          onClose={() => {
+            setShowForgottenModal(false);
+            fetchState();
+            loadToday();
+          }}
         />
       )}
 
       {/* Timer Hero */}
-      <BentoCard pulse={running} className="text-center py-10 md:col-span-2 xl:col-span-3">
+      <BentoCard
+        pulse={running}
+        className="text-center py-10 md:col-span-2 xl:col-span-3"
+      >
         {/* Session timer */}
         <div className="mb-2 text-xs text-zen-500 uppercase tracking-wider">
-          {running ? 'Standing for' : 'Ready to stand'}
+          {running ? "Standing for" : "Ready to stand"}
         </div>
-        <div className="timer-display text-6xl md:text-8xl font-bold text-zen-100 mb-2">
+        <div className="timer-display text-6xl lg:text-8xl font-bold text-zen-100 mb-2">
           {formatTime(running ? elapsed : 0)}
         </div>
         <div className="text-sm text-zen-400 mb-4">
-          Today: {formatTime(displaySeconds)} ({formatMinutes(displaySeconds)} min)
+          Today: {formatTime(displaySeconds)} ({formatMinutes(displaySeconds)}{" "}
+          min)
         </div>
 
         {/* Running session info: streak + goal progress */}
@@ -68,7 +83,9 @@ export default function TimerPage() {
                 <span className="text-zen-500">day streak</span>
               </span>
             )}
-            <span className={`flex items-center gap-1.5 ${goalProgress >= 100 ? 'text-green-400' : 'text-accent-400'}`}>
+            <span
+              className={`flex items-center gap-1.5 ${goalProgress >= 100 ? "text-green-400" : "text-accent-400"}`}
+            >
               <Target size={16} />
               <span className="font-semibold">{Math.round(goalProgress)}%</span>
               <span className="text-zen-500">of goal</span>
@@ -80,13 +97,14 @@ export default function TimerPage() {
         <button
           onClick={running ? stop : start}
           className={`inline-flex items-center gap-3 px-10 py-4 rounded-2xl text-lg font-bold transition-all duration-300 active:scale-95
-            ${running
-              ? 'bg-danger-500 hover:bg-danger-400 text-white'
-              : 'bg-accent-500 hover:bg-accent-400 text-zen-950'
+            ${
+              running
+                ? "bg-danger-500 hover:bg-danger-400 text-white"
+                : "bg-accent-500 hover:bg-accent-400 text-zen-950"
             }`}
         >
           {running ? <Square size={22} /> : <Play size={22} />}
-          {running ? 'Stop' : 'Start Standing'}
+          {running ? "Stop" : "Start Standing"}
         </button>
       </BentoCard>
 
@@ -135,7 +153,9 @@ export default function TimerPage() {
                   style={{ width: `${Math.round(lvl.progress * 100)}%` }}
                 />
               </div>
-              <p className="text-[10px] text-zen-500 mt-1">{Math.round(lvl.progress * 100)}% to next level</p>
+              <p className="text-[10px] text-zen-500 mt-1">
+                {Math.round(lvl.progress * 100)}% to next level
+              </p>
             </div>
           )}
         </BentoCard>
