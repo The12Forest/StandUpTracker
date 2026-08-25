@@ -156,8 +156,13 @@ async function start() {
   // Set CORS origin from DB settings (appUrl)
   try {
     const appUrlSetting = await getSetting('appUrl');
+    if (appUrlSetting.includes("localhost")) {
+      appUrlSetting = '*';
+    }
     if (appUrlSetting) app.set('corsOrigin', appUrlSetting);
-  } catch { /* use wildcard fallback */ }
+  } catch { /* use wildcard fallback */ 
+    app.set('corsOrigin', '*');
+  }
 
   // Startup streak integrity check — backfills goalMet, corrects inconsistent streaks
   startupStreakIntegrityCheck(io).catch(err => {
