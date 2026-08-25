@@ -116,7 +116,9 @@ export default function LoginPage() {
           <h2 className="text-lg font-semibold text-zen-100 mb-6">Sign In</h2>
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             <div>
-              <label className="text-xs text-zen-500 mb-1 block">Username or Email</label>
+              <label className="text-xs text-zen-500 mb-1 block">
+                Username or Email
+              </label>
               <input
                 type="text"
                 value={login}
@@ -128,10 +130,12 @@ export default function LoginPage() {
               />
             </div>
             <div>
-              <label className="text-xs text-zen-500 mb-1 block">Password</label>
-              <div className="relative">
+              <label className="text-xs text-zen-500 mb-1 block">
+                Password
+              </label>
+              <div className="relative flex items-center">
                 <input
-                  type={showPw ? 'text' : 'password'}
+                  type={showPw ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="glass-input w-full pr-10"
@@ -142,7 +146,8 @@ export default function LoginPage() {
                 <button
                   type="button"
                   onClick={() => setShowPw(!showPw)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-zen-500 hover:text-zen-300"
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-zen-500 hover:text-zen-300 focus:outline-none"
+                  tabIndex={-1}
                 >
                   {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
@@ -152,7 +157,7 @@ export default function LoginPage() {
             {needs2FA && (
               <div>
                 <label className="text-xs text-zen-500 mb-1 block">
-                  {needs2FA === 'totp' ? 'Authenticator Code' : 'Email Code'}
+                  {needs2FA === "totp" ? "Authenticator Code" : "Email Code"}
                 </label>
                 <input
                   type="text"
@@ -163,15 +168,17 @@ export default function LoginPage() {
                   maxLength={6}
                   autoFocus
                 />
-                {needs2FA === 'email' && (
+                {needs2FA === "email" && (
                   <button
                     type="button"
                     onClick={async () => {
                       setLoading(true);
                       try {
                         await authLogin(login, password, undefined, undefined);
-                        toast.info('Code re-sent to your email');
-                      } catch { /* already handled */ }
+                        toast.info("Code re-sent to your email");
+                      } catch {
+                        /* already handled */
+                      }
                       setLoading(false);
                     }}
                     className="text-xs text-accent-400 hover:text-accent-300 mt-2"
@@ -182,14 +189,21 @@ export default function LoginPage() {
               </div>
             )}
 
-            <button type="submit" disabled={loading} className="btn-accent mt-2">
-              {loading ? 'Signing in...' : 'Sign In'}
+            <button
+              type="submit"
+              disabled={loading}
+              className="btn-accent mt-2"
+            >
+              {loading ? "Signing in..." : "Sign In"}
             </button>
           </form>
 
           <p className="text-center text-sm text-zen-500 mt-6">
-            No account?{' '}
-            <Link to="/register" className="text-accent-400 hover:text-accent-300">
+            No account?{" "}
+            <Link
+              to="/register"
+              className="text-accent-400 hover:text-accent-300"
+            >
               Create one
             </Link>
           </p>
