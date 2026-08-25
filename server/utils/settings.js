@@ -63,7 +63,7 @@ async function getSmtpConfig() {
 async function getAppConfig() {
   await refreshCache();
   return {
-    appUrl: _cache.appUrl || 'http://localhost:3000',
+    appUrl: _cache.appUrl || '*',
     appName: _cache.appName || 'StandUpTracker',
     port: parseInt(_cache.serverPort, 10) || 3000,
     sessionSecure: !!_cache.sessionSecure,
